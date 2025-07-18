@@ -290,10 +290,10 @@ const Chat: React.FC = () => {
         </div>
       </div>
 
-      {/* Overlay for mobile */}
+      {/* Overlay for all screen sizes */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black opacity-40 z-20 md:hidden"
+          className="fixed inset-0 bg-black opacity-40 z-20"
           onClick={() => setIsSidebarOpen(false)}
         ></div>
       )}
@@ -305,7 +305,7 @@ const Chat: React.FC = () => {
           <div className="flex items-center">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="text-neutral-700 hover:text-neutral-900 bg-inherit hover:border-none md:hidden"
+              className="text-neutral-700 hover:text-neutral-900 bg-inherit hover:border-none"
             >
               <FiMenu className="hover:border-none" />
             </button>
@@ -318,10 +318,10 @@ const Chat: React.FC = () => {
 
                 {/* us==name and last seen */}
                 <div>
-                  <h1 className="text-[clamp(0.7rem,4.3vw,2rem)] font-bold text-neutral-900">
+                  <h1 className="text-[clamp(0.7rem,4.3vw,1.6rem)] font-bold text-neutral-900">
                     {selectedUser.displayName}
                   </h1>
-                  <p className="text-[clamp(0.5rem,3vw,2rem)] text-neutral-500">
+                  <p className="text-[clamp(0.5rem,3vw,1rem)] text-neutral-500">
                     {getLastActiveText(selectedUser.lastSeen)}
                   </p>
                 </div>
@@ -414,7 +414,7 @@ const Chat: React.FC = () => {
 
                     {/* time messag is sent */}
                     <div
-                      className={`text-[clamp(0.65rem,2vw,3rem)] text-right mt-1 ${
+                      className={`text-[clamp(0.65rem,2vw,0.655rem)] text-right mt-1 ${
                         isCurrentUser ? "text-neutral-200" : "text-neutral-400"
                       }`}
                     >
