@@ -22,6 +22,7 @@ export interface Message {
   isPrivate?: boolean;
   to?: string;
   from?: string;
+  participants?: string[];
 }
 
 export interface User {
@@ -32,19 +33,25 @@ export interface User {
 
 // Add/update user in Firestore
 export const addOrUpdateUser = async (displayName: string) => {
-  if (auth.currentUser) {
-    let fallbackName = auth.currentUser.displayName;
-    if (!fallbackName || !fallbackName.trim()) {
-      if (auth.currentUser.email) {
-        fallbackName = auth.currentUser.email.split("@")[0];
-      } else {
-        fallbackName = "User";
-      }
+  if (!auth.currentUser) {
+    console.error("No authenticated user");
+    return;
+  }
+  let fallbackName = auth.currentUser.displayName;
+  if (!fallbackName || !fallbackName.trim()) {
+    if (auth.currentUser.email) {
+      fallbackName = auth.currentUser.email.split("@")[0];
+    } else {
+      fallbackName = "User";
     }
+  }
+  try {
     await setDoc(doc(db, "users", auth.currentUser.uid), {
       displayName: displayName.trim() || fallbackName,
       lastSeen: Date.now(),
-    });
+    }, { merge: true });
+  } catch (error) {
+    console.error("Error updating user:", error);
   }
 };
 
@@ -58,6 +65,8 @@ export const listenForUsers = (callback: (users: User[]) => void) => {
       }))
       .filter((user) => user.id !== auth.currentUser?.uid) as User[];
     callback(userData);
+  }, (error) => {
+    console.error("Listen error:", error);
   });
 };
 
@@ -80,18 +89,17 @@ export const listenForMessages = (
       id: doc.id,
       ...doc.data(),
     })) as Message[];
-
+    const currentUid = auth.currentUser?.uid;
     const filteredMessages = selectedUser
       ? msgData.filter(
           (msg) =>
-            (msg.from === auth.currentUser?.uid &&
-              msg.to === selectedUser.id) ||
-            (msg.to === auth.currentUser?.uid && msg.from === selectedUser.id)
+            currentUid &&
+            msg.participants?.includes(currentUid) &&
+            (msg.from === currentUid || msg.to === currentUid)
         )
       : msgData;
-
     callback(filteredMessages.sort((a, b) => a.timestamp - b.timestamp));
-  });
+  }, (error) => console.error("Listen error:", error));
 };
 
 // Update display name
@@ -114,25 +122,28 @@ export const updateUserDisplayName = async (displayName: string) => {
 };
 
 // Send message
+
 export const sendMessage = async (
   newMessage: string,
   displayName: string,
   selectedUser: User | null
 ) => {
-  if (!newMessage.trim()) return;
-  await addDoc(collection(db, "messages"), {
+  if (!newMessage.trim() || !auth.currentUser) return;
+  const messageData: any = {
     text: newMessage,
-    user: displayName || auth.currentUser?.displayName || "Anonymous",
+    user: displayName || auth.currentUser.displayName || "Anonymous",
     timestamp: Date.now(),
     isPrivate: !!selectedUser,
-    ...(selectedUser && {
-      to: selectedUser.id,
-      from: auth.currentUser?.uid,
-      participants: [selectedUser.id, auth.currentUser?.uid],
-    }),
-  });
+    from: auth.currentUser.uid,
+    to: selectedUser ? selectedUser.id : undefined,
+    participants: selectedUser ? [auth.currentUser.uid, selectedUser.id].sort() : undefined,
+  };
+  try {
+    await addDoc(collection(db, "messages"), messageData);
+  } catch (error) {
+    console.error("Error sending message:", error);
+  }
 };
-
 // Sign out
 export const signOutUser = async (navigate: (path: string) => void) => {
   await signOut(auth);

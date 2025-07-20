@@ -12,9 +12,13 @@ const Login: React.FC = () => {
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      navigate("/chat");
+      if (auth.currentUser) {
+        navigate("/chat");
+      } else {
+        setError("Login failed, no user session");
+      }
     } catch (err) {
-      setError("There was an error signing in");
+      setError("There was an error signing in with Google");
     }
   };
 

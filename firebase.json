@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "site": "chat-isk",
+    "site": "isk-chat-room",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [

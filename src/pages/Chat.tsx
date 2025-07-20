@@ -70,7 +70,7 @@ const Chat: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !auth.currentUser) return;
     await sendMessage(newMessage, displayName, selectedUser);
     setNewMessage("");
   };
@@ -92,6 +92,14 @@ const Chat: React.FC = () => {
     setEditingId(null);
     setEditingText("");
   };
+
+  useEffect(() => {
+    if (auth.currentUser) {
+      addOrUpdateUser(displayName);
+    } else {
+      navigate("/login");
+    }
+  }, [displayName, navigate]);
 
   return (
     <div className="flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden">
