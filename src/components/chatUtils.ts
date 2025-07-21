@@ -12,6 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { signOut, updateProfile } from "firebase/auth";
+import axios from "axios";
 
 // Message and User interfaces (re-export for convenience)
 export interface Message {
@@ -29,6 +30,7 @@ export interface User {
   id: string;
   displayName: string;
   lastSeen: number;
+  photoURL?: string; // Add this line
 }
 
 // Add/update user in Firestore
@@ -46,10 +48,14 @@ export const addOrUpdateUser = async (displayName: string) => {
     }
   }
   try {
-    await setDoc(doc(db, "users", auth.currentUser.uid), {
-      displayName: displayName.trim() || fallbackName,
-      lastSeen: Date.now(),
-    }, { merge: true });
+    await setDoc(
+      doc(db, "users", auth.currentUser.uid),
+      {
+        displayName: displayName.trim() || fallbackName,
+        lastSeen: Date.now(),
+      },
+      { merge: true }
+    );
   } catch (error) {
     console.error("Error updating user:", error);
   }
@@ -57,17 +63,21 @@ export const addOrUpdateUser = async (displayName: string) => {
 
 // Listen for users (returns unsubscribe function)
 export const listenForUsers = (callback: (users: User[]) => void) => {
-  return onSnapshot(collection(db, "users"), (snapshot) => {
-    const userData = snapshot.docs
-      .map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }))
-      .filter((user) => user.id !== auth.currentUser?.uid) as User[];
-    callback(userData);
-  }, (error) => {
-    console.error("Listen error:", error);
-  });
+  return onSnapshot(
+    collection(db, "users"),
+    (snapshot) => {
+      const userData = snapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }))
+        .filter((user) => user.id !== auth.currentUser?.uid) as User[];
+      callback(userData);
+    },
+    (error) => {
+      console.error("Listen error:", error);
+    }
+  );
 };
 
 // Listen for messages (returns unsubscribe function)
@@ -76,30 +86,37 @@ export const listenForMessages = (
   callback: (messages: Message[]) => void
 ) => {
   const messagesRef = collection(db, "messages");
-  const q = selectedUser
-    ? query(
-        messagesRef,
-        where("isPrivate", "==", true),
-        where("participants", "array-contains", auth.currentUser?.uid)
-      )
-    : query(messagesRef, where("isPrivate", "==", false));
+  let q;
+  if (selectedUser) {
+    q = query(
+      messagesRef,
+      where("isPrivate", "==", true),
+      where("participants", "array-contains", auth.currentUser?.uid)
+    );
+  } else {
+    q = query(messagesRef, where("isPrivate", "==", false));
+  }
 
-  return onSnapshot(q, (snapshot) => {
-    const msgData = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Message[];
-    const currentUid = auth.currentUser?.uid;
-    const filteredMessages = selectedUser
-      ? msgData.filter(
-          (msg) =>
-            currentUid &&
-            msg.participants?.includes(currentUid) &&
-            (msg.from === currentUid || msg.to === currentUid)
-        )
-      : msgData;
-    callback(filteredMessages.sort((a, b) => a.timestamp - b.timestamp));
-  }, (error) => console.error("Listen error:", error));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const msgData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Message[];
+      const currentUid = auth.currentUser?.uid;
+      const filteredMessages = selectedUser
+        ? msgData.filter(
+            (msg) =>
+              currentUid &&
+              msg.participants?.includes(currentUid) &&
+              (msg.from === currentUid || msg.to === currentUid)
+          )
+        : msgData;
+      callback(filteredMessages.sort((a, b) => a.timestamp - b.timestamp));
+    },
+    (error) => console.error("Listen error:", error)
+  );
 };
 
 // Update display name
@@ -122,28 +139,31 @@ export const updateUserDisplayName = async (displayName: string) => {
 };
 
 // Send message
-
 export const sendMessage = async (
-  newMessage: string,
+  content: string,
   displayName: string,
   selectedUser: User | null
 ) => {
-  if (!newMessage.trim() || !auth.currentUser) return;
-  const messageData: any = {
-    text: newMessage,
+  if (!content.trim() || !auth.currentUser) return;
+  const messageData = {
+    text: content,
     user: displayName || auth.currentUser.displayName || "Anonymous",
     timestamp: Date.now(),
     isPrivate: !!selectedUser,
     from: auth.currentUser.uid,
-    to: selectedUser ? selectedUser.id : undefined,
-    participants: selectedUser ? [auth.currentUser.uid, selectedUser.id].sort() : undefined,
-  };
+  } as any; // Type assertion to allow dynamic properties
+  if (selectedUser) {
+    messageData.to = selectedUser.id;
+    messageData.participants = [auth.currentUser.uid, selectedUser.id].sort();
+  }
   try {
-    await addDoc(collection(db, "messages"), messageData);
+    const docRef = await addDoc(collection(db, "messages"), messageData);
+    console.log("Message sent with ID:", docRef.id, messageData);
   } catch (error) {
-    console.error("Error sending message:", error);
+    console.error("Error sending message:", error as any);
   }
 };
+
 // Sign out
 export const signOutUser = async (navigate: (path: string) => void) => {
   await signOut(auth);
@@ -182,4 +202,36 @@ export const getLastActiveText = (lastSeen: number) => {
     hour12: true,
   });
   return `Last seen: ${formatted}`;
-}; 
+};
+
+export const uploadToImgBB = async (file: File, apiKey: string) => {
+  if (!apiKey) {
+    throw new Error("ImgBB API key is missing or undefined");
+  }
+  const formData = new FormData();
+  formData.append("image", file);
+  formData.append("key", apiKey);
+  formData.append("expiration", "0"); // No expiration
+
+  try {
+    const response = await axios.post(
+      "https://api.imgbb.com/1/upload",
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      }
+    );
+    if (response.data.success) {
+      console.log("ImgBB upload success:", response.data.data.url);
+      return response.data.data.url;
+    } else {
+      throw new Error(`ImgBB upload failed: ${response.data.status_txt}`);
+    }
+  } catch (error) {
+    console.error("ImgBB upload error details:", {
+      message: (error as any).message,
+      response: (error as any).response?.data || "No response data",
+    });
+    throw error;
+  }
+};

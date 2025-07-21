@@ -1,13 +1,18 @@
 import { useState, useEffect } from "react";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
+import { updateDoc, doc } from "firebase/firestore";
+import { db } from "../firebase";
 import {
   FiLogOut,
   FiMenu,
   FiUser,
   FiEdit2,
   FiMessageSquare,
+  FiUpload, // Add for file upload icon
 } from "react-icons/fi";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faTrash } from "@fortawesome/free-solid-svg-icons";
 import {
   addOrUpdateUser,
   listenForUsers,
@@ -19,6 +24,7 @@ import {
   editMessage,
   formatTime,
   getLastActiveText,
+  uploadToImgBB,
 } from "../components/chatUtils";
 import type { User, Message } from "../components/chatUtils";
 
@@ -39,6 +45,10 @@ const Chat: React.FC = () => {
     open: boolean;
     messageId: string | null;
   }>({ open: false, messageId: null });
+  const [userSearch, setUserSearch] = useState("");
+  const [fileInput, setFileInput] = useState<File | null>(null);
+  const [photoURL, setPhotoURL] = useState(auth.currentUser?.photoURL || ""); // Separate state for photo
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -70,9 +80,28 @@ const Chat: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !auth.currentUser) return;
-    await sendMessage(newMessage, displayName, selectedUser);
-    setNewMessage("");
+    if (!newMessage.trim() && !fileInput) return;
+    if (auth.currentUser) {
+      try {
+        let content = newMessage.trim() || "Image sent";
+        if (fileInput) {
+          const imageUrl = await uploadToImgBB(
+            fileInput,
+            import.meta.env.VITE_IMGBB_API_KEY
+          );
+          content = imageUrl;
+        }
+        await sendMessage(content, displayName, selectedUser);
+        setNewMessage("");
+        setFileInput(null);
+        console.log("Message sent successfully:", content);
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        alert(
+          "Failed to send message or upload image. Check console for details."
+        );
+      }
+    }
   };
 
   const handleSignOut = async () => {
@@ -96,10 +125,33 @@ const Chat: React.FC = () => {
   useEffect(() => {
     if (auth.currentUser) {
       addOrUpdateUser(displayName);
+      setPhotoURL(auth.currentUser.photoURL || "");
     } else {
       navigate("/login");
     }
   }, [displayName, navigate]);
+
+  const handleProfileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        const url = await uploadToImgBB(
+          file,
+          import.meta.env.VITE_IMGBB_API_KEY
+        );
+        await updateDoc(doc(db, "users", auth.currentUser!.uid), {
+          photoURL: url,
+        });
+        setPhotoURL(url); // Update photoURL state
+        console.log("Profile picture uploaded:", url);
+      } catch (error) {
+        console.error("Profile upload error:", error);
+        alert("Failed to upload profile picture. Check console for details.");
+      }
+    }
+  };
 
   return (
     <div className="flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden">
@@ -112,8 +164,16 @@ const Chat: React.FC = () => {
         {/* User Info & Actions */}
         <div className="p-4 border-b border-neutral-200">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-full bg-neutral-900 flex items-center justify-center">
-              <FiUser className="w-5 h-5 text-white" />
+            <div className="w-8 h-8 rounded-full bg-neutral-900 flex items-center justify-center overflow-hidden">
+              {photoURL ? (
+                <img
+                  src={photoURL}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <FiUser className="w-5 h-5 text-white" />
+              )}
             </div>
             <div className="flex-1">
               {isEditingName ? (
@@ -145,18 +205,30 @@ const Chat: React.FC = () => {
                 </div>
               )}
             </div>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleProfileUpload}
+              className="hidden"
+              id="profile-upload"
+            />
+            <label htmlFor="profile-upload" className="cursor-pointer">
+              <FiUpload className="w-5 h-5 text-neutral-600 hover:text-neutral-900" />
+            </label>
           </div>
-          <button
-            onClick={handleSignOut}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-neutral-800 to-neutral-700 hover:from-neutral-900 hover:to-neutral-800 text-white rounded shadow transition-colors"
-          >
-            <FiLogOut />
-            <span>Logout</span>
-          </button>
         </div>
         {/* User List */}
-        <div className="flex-1 overflow-y-auto">
-          <p className="p-4 text-sm font-semibold text-neutral-700">Users</p>
+        <div className="flex-1 overflow-y-auto pt-3">
+          {/* Add search input for private users */}
+          <div className="px-4 pb-2">
+            <input
+              type="text"
+              value={userSearch || ""}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Search users..."
+              className="w-full px-3 py-1 border placeholder:text-sm text-white border-neutral-300 rounded mb-2 focus:outline-none focus:border-neutral-700"
+            />
+          </div>
           {usersLoading ? (
             <div className="flex items-center justify-center py-6">
               <svg
@@ -197,29 +269,60 @@ const Chat: React.FC = () => {
                 </div>
                 <span className="font-semibold">Global Chat</span>
               </li>
-              {users.map((user) => (
-                <li
-                  key={user.id}
-                  onClick={() => {
-                    setSelectedUser(user);
-                    setIsSidebarOpen(false);
-                  }}
-                  className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors rounded-lg mx-2 mb-1 ${
-                    selectedUser?.id === user.id
-                      ? "bg-neutral-100 text-neutral-900"
-                      : "hover:bg-neutral-50 text-neutral-700"
-                  }`}
-                >
-                  <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-white font-bold">
-                    {user.displayName?.charAt(0).toUpperCase() || "?"}
-                  </div>
-                  <span>{user.displayName || "Unnamed User"}</span>
-                </li>
-              ))}
+              <hr className="border border-slate-700" />
+
+              <p className="p-4 text-sm font-semibold text-neutral-700">
+                Private Users
+              </p>
+
+              {/* Filter users by search */}
+              {users
+                .filter(
+                  (user) =>
+                    !userSearch ||
+                    user.displayName
+                      ?.toLowerCase()
+                      .includes(userSearch.toLowerCase())
+                )
+                .map((user) => (
+                  <li
+                    key={user.id}
+                    onClick={() => {
+                      setSelectedUser(user);
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors rounded-lg mx-2 mb-1 ${
+                      selectedUser?.id === user.id
+                        ? "bg-neutral-100 text-neutral-900"
+                        : "hover:bg-neutral-50 text-neutral-700"
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-white font-bold overflow-hidden">
+                      {user.photoURL ? (
+                        <img
+                          src={user.photoURL}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        user.displayName?.charAt(0).toUpperCase() || "?"
+                      )}
+                    </div>
+                    <span>{user.displayName || "Unnamed User"}</span>
+                  </li>
+                ))}
             </ul>
           )}
         </div>
+
+        <button
+          onClick={handleSignOut}
+          className="w-fit ml-auto px-4 py-2 bg-gradient-to-r from-neutral-800 to-neutral-700 hover:from-neutral-900 hover:to-neutral-800 text-white rounded shadow transition-colors"
+        >
+          <FiLogOut />
+        </button>
       </div>
+
       {/* Overlay for mobile only, when sidebar is open */}
       <div
         className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${
@@ -227,6 +330,7 @@ const Chat: React.FC = () => {
         }`}
         onClick={() => setIsSidebarOpen(false)}
       ></div>
+
       {/* Delete Confirmation Modal */}
       {deleteModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -255,6 +359,7 @@ const Chat: React.FC = () => {
           </div>
         </div>
       )}
+
       {/* Chat Area */}
       <div className="flex-1 flex flex-col transition-all duration-300 ease-in-out min-h-0">
         {/* Header */}
@@ -262,19 +367,13 @@ const Chat: React.FC = () => {
           <div className="flex items-center">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="text-neutral-700 hover:text-neutral-900 md:hidden"
-              style={{
-                outline: "none",
-                boxShadow: "none",
-                border: "2px solid transparent",
-                background: "inherit",
-                boxSizing: "border-box",
-              }}
+              className="text-neutral-700 hover:text-neutral-900 md:hidden mr-2 bg-inherit"
+              style={{border: "2px solid inherit", boxSizing: "border-box",}}
             >
               <FiMenu />
             </button>
             {selectedUser ? (
-              <div className="flex items-center gap-3 md:ml-4">
+              <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-neutral-700 flex items-center justify-center text-white font-bold">
                   {selectedUser.displayName.charAt(0).toUpperCase()}
                 </div>
@@ -288,15 +387,16 @@ const Chat: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <h1 className="text-lg font-semibold text-neutral-900 md:ml-4">
+              <h1 className="text-lg font-semibold text-neutral-900">
                 Global Chat
               </h1>
             )}
           </div>
         </div>
+
         {/* Messages Area */}
         <div
-          className="flex-1 p-2 sm:p-4 overflow-y-auto bg-slate-500"
+          className="flex-1 p-2 sm:p-4 overflow-y-auto bg-gray-500/15"
           style={{
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -306,7 +406,7 @@ const Chat: React.FC = () => {
           <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3">
             {selectedUser && messages.length === 0 ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="flex flex-col justify-center items-center rounded-lg px-6 py-8 text-center text-base bg-black/70 text-white ">
+                <div className="flex flex-col justify-center items-center rounded-lg px-6 py-8 text-center text-base bg-black/70 text-white">
                   <span className="font-semibold">
                     {`Say hey! Start a conversation with `}
                     <br className="md:hidden" />
@@ -337,7 +437,7 @@ const Chat: React.FC = () => {
                       }`}
                     >
                       {isCurrentUser && editingId !== msg.id && (
-                        <div className="absolute left-[-40px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <div className="absolute left-[3px] top-full -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                           <button
                             onClick={() => {
                               setEditingId(msg.id);
@@ -351,9 +451,13 @@ const Chat: React.FC = () => {
                             onClick={() =>
                               setDeleteModal({ open: true, messageId: msg.id })
                             }
-                            className="bg-neutral-900 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-neutral-800 shadow"
+                            className="bg-neutral-700 rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-neutral-800 shadow"
                           >
-                            ×
+                            <FontAwesomeIcon
+                              icon={faTrash}
+                              className="w-2.5 h-2.5"
+                              color="white"
+                            />
                           </button>
                         </div>
                       )}
@@ -391,7 +495,15 @@ const Chat: React.FC = () => {
                         </div>
                       ) : (
                         <div className="text-base break-words whitespace-pre-wrap">
-                          {msg.text}
+                          {msg.text.startsWith("http") ? (
+                            <img
+                              src={msg.text}
+                              alt="Uploaded"
+                              className="max-w-full h-auto rounded-lg"
+                            />
+                          ) : (
+                            msg.text
+                          )}
                         </div>
                       )}
                       <div
@@ -419,12 +531,22 @@ const Chat: React.FC = () => {
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
               className="flex-1 px-4 py-2 border-2 border-neutral-200 rounded-full focus:outline-none focus:border-neutral-800 focus:ring-1 focus:ring-neutral-800 transition-colors text-neutral-900 bg-neutral-50 placeholder-neutral-400"
-              placeholder="Type a message..."
+              placeholder="Type a message or upload an image..."
             />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+              className="hidden"
+              id="message-upload"
+            />
+            <label htmlFor="message-upload" className="cursor-pointer">
+              <FiUpload className="w-6 h-6 text-neutral-600 hover:text-neutral-900" />
+            </label>
             <button
               onClick={handleSendMessage}
-              className="px-6 py-2 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white font-semibold rounded-full hover:from-neutral-800 hover:to-neutral-900 transition-colors shadow-md disabled:bg-neutral-300"
-              disabled={!newMessage.trim()}
+              className="px-6 py-2 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white font-semibold rounded-full hover:from-neutral-800 hover:to-neutral-900 transition-colors shadow-md"
+              // Remove disabled condition to allow image-only sends
             >
               Send
             </button>

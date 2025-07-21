@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
@@ -7,6 +7,15 @@ import { FcGoogle } from "react-icons/fc";
 const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -43,7 +52,7 @@ const Login: React.FC = () => {
         </button>
 
         {error && (
-          <div className="mt-4 p-2 sm:p-3 bg-neutral-100 text-neutral-800 rounded-lg text-center text-sm sm:text-base border border-neutral-200">
+          <div className="mt-4 p-2 sm:p-3 bg-neutral-100 text-neutral-800 rounded-lg text-center text-sm sm:text-base border border-neutral-200 animate-fade-in">
             {error}
           </div>
         )}
