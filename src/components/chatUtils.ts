@@ -109,8 +109,9 @@ export const listenForMessages = (
         ? msgData.filter(
             (msg) =>
               currentUid &&
-              msg.participants?.includes(currentUid) &&
-              (msg.from === currentUid || msg.to === currentUid)
+              msg.participants &&
+              msg.participants.includes(currentUid) &&
+              msg.participants.includes(selectedUser.id)
           )
         : msgData;
       callback(filteredMessages.sort((a, b) => a.timestamp - b.timestamp));
@@ -172,7 +173,13 @@ export const signOutUser = async (navigate: (path: string) => void) => {
 
 // Delete message
 export const deleteMessage = async (messageId: string) => {
-  await deleteDoc(doc(db, "messages", messageId));
+  try {
+    await deleteDoc(doc(db, "messages", messageId));
+    console.log(`Message ${messageId} deleted successfully`);
+  } catch (error) {
+    console.error("Error deleting message:", error);
+    throw error;
+  }
 };
 
 // Edit message
@@ -193,15 +200,36 @@ export const formatTime = (timestamp: number) =>
 
 // Last active text
 export const getLastActiveText = (lastSeen: number) => {
-  const now = Date.now();
-  const diffMin = Math.floor((now - lastSeen) / 60000);
+  const now = new Date();
+  const lastSeenDate = new Date(lastSeen);
+  const diffMin = Math.floor((now.getTime() - lastSeen) / 60000);
+
+  // Check if last seen is within the last minute
   if (diffMin < 1) return "Active now";
-  const formatted = new Date(lastSeen).toLocaleTimeString("en-US", {
+
+  // Check if last seen is on the same day
+  const isSameDay =
+    now.getFullYear() === lastSeenDate.getFullYear() &&
+    now.getMonth() === lastSeenDate.getMonth() &&
+    now.getDate() === lastSeenDate.getDate();
+
+  // Format time
+  const timeFormatted = lastSeenDate.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
-  return `Last seen: ${formatted}`;
+
+  if (isSameDay) {
+    return `Last seen: ${timeFormatted}`;
+  } else {
+    // Format date (e.g., "Jul 22")
+    const dateFormatted = lastSeenDate.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    return `Last seen: ${dateFormatted}, ${timeFormatted}`;
+  }
 };
 
 export const uploadToImgBB = async (file: File, apiKey: string) => {
