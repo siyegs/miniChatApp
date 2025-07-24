@@ -1,5 +1,5 @@
 import React from "react";
-import { FiUpload } from "react-icons/fi";
+import { FiUpload, FiX, FiSend } from "react-icons/fi";
 
 interface MessageInputProps {
   newMessage: string;
@@ -7,43 +7,94 @@ interface MessageInputProps {
   handleSendMessage: () => void;
   fileInput: File | null;
   setFileInput: (file: File | null) => void;
+  isUploading: boolean;
 }
 
 const MessageInput: React.FC<MessageInputProps> = ({
   newMessage,
   setNewMessage,
   handleSendMessage,
+  fileInput,
   setFileInput,
-}) => (
-  <div className="p-2 sm:p-4 bg-white/90 border-t border-neutral-200">
-    <div className="flex items-center gap-2 max-w-4xl mx-auto">
-      <input
-        type="text"
-        value={newMessage}
-        onChange={(e) => setNewMessage(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-        className="flex-1 px-4 py-2 border-2 border-neutral-200 rounded-full focus:outline-none focus:border-neutral-800 focus:ring-1 focus:ring-neutral-800 transition-colors text-neutral-900 bg-neutral-50 placeholder-neutral-400"
-        placeholder="Type a message or upload an image..."
-      />
-      <input
-        type="file"
-        accept="image/*"
-        onChange={(e) => setFileInput(e.target.files?.[0] || null)}
-        className="hidden"
-        id="message-upload"
-      />
-      <label htmlFor="message-upload" className="cursor-pointer">
-        <FiUpload className="w-6 h-6 text-neutral-600 hover:text-neutral-900" />
-      </label>
+  isUploading,
+}) => {
+  const previewUrl = fileInput ? URL.createObjectURL(fileInput) : null;
+
+  React.useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  return (
+    <div className="flex p-2 sm:p-4 bg-white/90 border-t border-neutral-200 gap-3">
+      <div className="flex  items-center w-full rounded-3xl  bg-white/90 px-3 gap-4">
+        <div className="w-full">
+          {fileInput && (
+            <div className="relative mr-2">
+              <div className="w-10 h-10 rounded-lg bg-neutral-100 overflow-hidden">
+                <img
+                  src={previewUrl || ""}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <button
+                onClick={() => setFileInput(null)}
+                className="absolute -top-2 -right-2 bg-neutral-800 rounded-full p-1 text-white hover:bg-neutral-900"
+                disabled={isUploading}
+              >
+                <FiX size={12} />
+              </button>
+            </div>
+          )}
+
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) =>
+              e.key === "Enter" && !isUploading && handleSendMessage()
+            }
+            className="flex-1 py-2 focus:outline-none w-full rounded-3xl transition-colors text-neutral-900 bg-white/90 placeholder-neutral-400 max-md:placeholder:text-sm"
+            placeholder="Type a message or upload an image..."
+            disabled={isUploading}
+          />
+
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+            className="hidden"
+            id="message-upload"
+            disabled={isUploading}
+          />
+        </div>
+
+        <label
+          htmlFor="message-upload"
+          className={`cursor-pointer ${isUploading ? "opacity-50" : ""}`}
+        >
+          <FiUpload className="w-5 h-5 text-neutral-600 hover:text-neutral-900" />
+        </label>
+      </div>
+
       <button
         onClick={handleSendMessage}
-        className="px-6 py-2 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white font-semibold rounded-full hover:from-neutral-800 hover:to-neutral-900 transition-colors shadow-md"
+        disabled={isUploading}
+        className={`px-6 py-2 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white font-semibold rounded-full transition-colors shadow-md ${
+          isUploading
+            ? "opacity-50 cursor-not-allowed"
+            : "hover:from-neutral-800 hover:to-neutral-900"
+        }`}
         aria-label="Send message"
       >
-        Send
+        {isUploading ? "Sending..." : <FiSend />}
       </button>
     </div>
-  </div>
-);
+  );
+};
 
-export default MessageInput; 
+export default MessageInput;

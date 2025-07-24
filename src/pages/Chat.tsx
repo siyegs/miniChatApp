@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { updateDoc, doc } from "firebase/firestore";
-import { db } from "../firebase";
 import { FiMessageSquare } from "react-icons/fi";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash } from "@fortawesome/free-solid-svg-icons";
@@ -24,12 +23,19 @@ import ConfirmModal from "../components/ConfirmModal";
 import Sidebar from "../components/Sidebar";
 import ChatHeader from "../components/ChatHeader";
 import MessageInput from "../components/MessageInput";
+import chatPattern from "/chat-bg3-copy.jpg";
 
 const Chat: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const cached = localStorage.getItem("cachedMessages");
+    return cached ? JSON.parse(cached) : [];
+  });
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem("selectedUser");
+    return saved ? JSON.parse(saved) : null;
+  });
   const [displayName, setDisplayName] = useState(
     auth.currentUser?.displayName || ""
   );
@@ -58,12 +64,30 @@ const Chat: React.FC = () => {
     const unsubscribe = listenForUsers((userList) => {
       setUsers(userList);
       setUsersLoading(false);
+
+      // Restore selected user from localStorage if it exists in the current users list
+      const savedUser = localStorage.getItem("selectedUser");
+      if (savedUser) {
+        const parsedUser = JSON.parse(savedUser);
+        const foundUser = userList.find((u) => u.id === parsedUser.id);
+        if (foundUser && !selectedUser) {
+          setSelectedUser(foundUser);
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    const unsubscribe = listenForMessages(selectedUser, setMessages);
+    const unsubscribe = listenForMessages(selectedUser, (newMessages) => {
+      setMessages((prevMessages) => {
+        // Only update if there are actual changes
+        if (JSON.stringify(prevMessages) !== JSON.stringify(newMessages)) {
+          return newMessages;
+        }
+        return prevMessages;
+      });
+    });
     return () => unsubscribe();
   }, [selectedUser]);
 
@@ -161,6 +185,43 @@ const Chat: React.FC = () => {
     []
   );
 
+  // Add this effect to save selectedUser to localStorage
+  useEffect(() => {
+    if (selectedUser) {
+      localStorage.setItem("selectedUser", JSON.stringify(selectedUser));
+    } else {
+      localStorage.removeItem("selectedUser");
+    }
+  }, [selectedUser]);
+
+  // Add image caching function
+  const cacheImage = useCallback(async (url: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        localStorage.setItem(`img_${url}`, base64data);
+      };
+    } catch (error) {
+      console.error("Error caching image:", error);
+    }
+  }, []);
+
+  // Add effect to cache images from messages
+  useEffect(() => {
+    messages.forEach((msg) => {
+      if (msg.text.startsWith("http")) {
+        const cached = localStorage.getItem(`img_${msg.text}`);
+        if (!cached) {
+          cacheImage(msg.text);
+        }
+      }
+    });
+  }, [messages, cacheImage]);
+
   return (
     <>
       <div className="flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden">
@@ -172,11 +233,6 @@ const Chat: React.FC = () => {
           isSidebarOpen={isSidebarOpen}
           setIsSidebarOpen={setIsSidebarOpen}
           displayName={displayName}
-          setDisplayName={setDisplayName}
-          isEditingName={isEditingName}
-          setIsEditingName={setIsEditingName}
-          handleUpdateDisplayName={handleUpdateDisplayName}
-          handleProfileUpload={handleProfileUpload}
           photoURL={photoURL}
           setPreviewImage={setPreviewImage}
           userSearch={userSearch}
@@ -206,17 +262,18 @@ const Chat: React.FC = () => {
           />
           {/* Messages Area */}
           <div
-            className="flex-1 p-2 sm:p-4 overflow-y-auto bg-gray-500/15"
+            className="flex-1 p-2 sm:p-4 overflow-y-auto"
             style={{
-              backgroundSize: "cover",
+              backgroundImage: `url(${chatPattern})`,
+              backgroundSize:"300px",
               backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
+              backgroundRepeat: "repeat",
             }}
           >
-            <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3">
+            <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3 z-100">
               {selectedUser && messages.length === 0 ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="flex flex-col justify-center items-center rounded-lg px-6 py-8 text-center text-base bg-black/70 text-white">
+                  <div className="flex flex-col justify-center items-center rounded-lg px-6 py-8 text-center text-base bg-black/60 text-[whitesmoke]">
                     <span className="font-semibold">
                       {`Say hey! Start a conversation with `}
                       <br className="md:hidden" />
@@ -346,6 +403,7 @@ const Chat: React.FC = () => {
             handleSendMessage={handleSendMessage}
             fileInput={fileInput}
             setFileInput={setFileInput}
+            isUploading={false}
           />
         </div>
       </div>
