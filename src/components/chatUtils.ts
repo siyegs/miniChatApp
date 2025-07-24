@@ -10,9 +10,17 @@ import {
   deleteDoc,
   where,
   setDoc,
+  getDocs,
 } from "firebase/firestore";
 import { signOut, updateProfile } from "firebase/auth";
 import axios from "axios";
+import {
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updateEmail,
+  updatePassword,
+} from "firebase/auth";
 
 // Message and User interfaces (re-export for convenience)
 export interface Message {
@@ -31,6 +39,7 @@ export interface User {
   displayName: string;
   lastSeen: number;
   photoURL?: string; // Add this line
+  isDeleted?: boolean;
 }
 
 // Add/update user in Firestore
@@ -53,6 +62,11 @@ export const addOrUpdateUser = async (displayName: string) => {
       {
         displayName: displayName.trim() || fallbackName,
         lastSeen: Date.now(),
+        photoURL: auth.currentUser.photoURL || "",
+        isDeleted: false,
+        createdAt: Date.now(),
+        email: auth.currentUser.email,
+        provider: auth.currentUser.providerData[0]?.providerId || "unknown",
       },
       { merge: true }
     );
@@ -63,15 +77,51 @@ export const addOrUpdateUser = async (displayName: string) => {
 
 // Listen for users (returns unsubscribe function)
 export const listenForUsers = (callback: (users: User[]) => void) => {
+  const messagesRef = collection(db, "messages");
+
   return onSnapshot(
-    collection(db, "users"),
-    (snapshot) => {
+    query(collection(db, "users")),
+    async (snapshot) => {
+      const currentUid = auth.currentUser?.uid;
+      if (!currentUid) return;
+
+      // Get all private messages for current user
+      const messagesQuery = query(
+        messagesRef,
+        where("participants", "array-contains", currentUid)
+      );
+      const messagesSnapshot = await getDocs(messagesQuery);
+
+      // Get unique user IDs from messages
+      const conversationPartnerIds = new Set<string>();
+      messagesSnapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.participants) {
+          data.participants.forEach((id: string) => {
+            if (id !== currentUid) {
+              conversationPartnerIds.add(id);
+            }
+          });
+        }
+      });
+
+      // Process users with additional validation
       const userData = snapshot.docs
-        .map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }))
-        .filter((user) => user.id !== auth.currentUser?.uid) as User[];
+        .map((doc) => {
+          const data = doc.data() as User;
+          const { id: _ignored, ...rest } = data;
+          return {
+            id: doc.id,
+            ...rest,
+          };
+        })
+        .filter(
+          (user) =>
+            user.id !== currentUid &&
+            user.displayName && // Ensure user has a displayName
+            (!user.isDeleted || conversationPartnerIds.has(user.id))
+        ) as User[];
+
       callback(userData);
     },
     (error) => {
@@ -262,4 +312,47 @@ export const uploadToImgBB = async (file: File, apiKey: string) => {
     });
     throw error;
   }
+};
+
+export const updateUserEmail = async (
+  currentPassword: string,
+  newEmail: string
+) => {
+  if (!auth.currentUser?.email) throw new Error("No user email found");
+
+  const credential = EmailAuthProvider.credential(
+    auth.currentUser.email,
+    currentPassword
+  );
+
+  await reauthenticateWithCredential(auth.currentUser, credential);
+  await updateEmail(auth.currentUser, newEmail);
+};
+
+export const updateUserPassword = async (
+  currentPassword: string,
+  newPassword: string
+) => {
+  if (!auth.currentUser?.email) throw new Error("No user email found");
+
+  const credential = EmailAuthProvider.credential(
+    auth.currentUser.email,
+    currentPassword
+  );
+
+  await reauthenticateWithCredential(auth.currentUser, credential);
+  await updatePassword(auth.currentUser, newPassword);
+};
+
+export const deleteUserAccount = async () => {
+  if (!auth.currentUser) throw new Error("No user found");
+
+  // Mark user as deleted instead of removing the document
+  await updateDoc(doc(db, "users", auth.currentUser.uid), {
+    isDeleted: true,
+    lastSeen: Date.now(),
+  });
+
+  // Delete the user account from Firebase Auth
+  await deleteUser(auth.currentUser);
 };

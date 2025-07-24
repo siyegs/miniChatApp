@@ -4,6 +4,8 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  signOut,
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
@@ -24,7 +26,7 @@ const Login: React.FC = () => {
     if (error) {
       const timer = setTimeout(() => {
         setError(null);
-      }, 5000);
+      }, 8000);
       return () => clearTimeout(timer);
     }
   }, [error]);
@@ -37,6 +39,16 @@ const Login: React.FC = () => {
     }
     setLoading(true);
     try {
+      const methods = await fetchSignInMethodsForEmail(auth, email);
+
+      if (methods.includes("google.com")) {
+        setError(
+          "This email is already registered with Google. Please use Google Sign In instead."
+        );
+        setLoading(false);
+        return;
+      }
+
       if (isSignUp) {
         await createUserWithEmailAndPassword(auth, email, password);
       } else {
@@ -44,7 +56,17 @@ const Login: React.FC = () => {
       }
       navigate("/chat");
     } catch (err: any) {
-      setError(err.message.replace("Firebase: ", ""));
+      if (err.code === "auth/email-already-in-use") {
+        setError(
+          "This email is already registered with Google. Please use Google Sign In instead."
+        );
+      } else if (err.code === "auth/invalid-credential") {
+        setError("Invalid email or password. Please try again.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many failed attempts. Please try again later.");
+      } else {
+        setError("An error occurred. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -53,14 +75,36 @@ const Login: React.FC = () => {
   const handleGoogleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      if (auth.currentUser) {
-        navigate("/chat");
-      } else {
-        setError("Login failed, no user session");
+      // First check if email exists with password auth
+      const result = await signInWithPopup(auth, provider);
+      const email = result.user?.email;
+
+      if (email) {
+        const methods = await fetchSignInMethodsForEmail(auth, email);
+        if (methods.includes("password")) {
+          // If email exists with password auth, sign out and show error
+          await signOut(auth);
+          setError(
+            "This email is already registered with Email/Password. Please use Email Sign In instead."
+          );
+          return;
+        }
       }
-    } catch (err) {
-      setError("There was an error signing in with Google");
+
+      navigate("/chat");
+    } catch (err: any) {
+      if (err.code === "auth/account-exists-with-different-credential") {
+        setError(
+          "This email is already registered with Email/Password. Please use Email Sign In instead."
+        );
+      } else if (err.code === "auth/popup-closed-by-user") {
+        setError("Sign in was cancelled. Please try again.");
+      } else if (err.code === "auth/cancelled-popup-request") {
+        // Ignore this error as it's not relevant to users
+        return;
+      } else {
+        setError("Failed to sign in with Google. Please try again.");
+      }
     }
   };
 
@@ -74,43 +118,44 @@ const Login: React.FC = () => {
         backgroundRepeat: "repeat",
       }}
     >
-      <div className="bg-[#743fc9] w-full max-md:w-[90%] max-w-[400px] lg:max-w-[600px] lg:w-[35%] rounded-lg shadow-2xl p-4 sm:p-6 lg:p-8 mx-4 sm:mx-auto transform transition-all">
+      <div className="bg-[#743fc9] w-full max-w-[400px] lg:max-w-[600px] lg:w-[35%] rounded-[10px] shadow-2xl p-4 sm:p-6 lg:p-8 sm:mx-auto transform transition-all">
         <div className="flex flex-col justify-center items-center">
-          <img src={iskLogo} alt="" className="w-8 h-8 mb-2" />
-          <p className="text-[clamp(12.5px,3vw,23px)] text-white mb-6 sm:mb-8">
-            {isSignUp ? "Create an account" : "Sign in to ISK chatroom!"}
+          <img src={iskLogo} alt="isk chat logo" className="w-8 h-8 mb-2" />
+          <p className="text-[clamp(12.5px,3vw,20px)] text-white mb-6 sm:mb-8 md:font-bold">
+            {isSignUp ? "Create an account" : "ISK Chatroom"}
           </p>
         </div>
 
         <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
           <div>
             <div className="relative">
-              <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600" />
+              <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-800" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
-                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/90 border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-400"
+                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,23px)]"
               />
             </div>
           </div>
           <div>
             <div className="relative">
-              <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600" />
+              <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-800" />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/90 border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-400"
+                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,23px)]"
               />
             </div>
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-neutral-900 text-white py-2 rounded-lg hover:bg-neutral-800 transition-colors duration-300"
+            onMouseOver={(e) => (e.currentTarget.style.border = "none")}
+            className="w-full bg-neutral-700/90 text-white py-2 rounded-lg hover:bg-neutral-800 transition-colors duration-300"
           >
             {loading ? "Please wait..." : isSignUp ? "Sign Up" : "Sign In"}
           </button>
@@ -137,7 +182,8 @@ const Login: React.FC = () => {
 
         <button
           onClick={() => setIsSignUp(!isSignUp)}
-          className="w-full text-white text-sm mt-4 hover:underline"
+          onMouseOver={(e) => (e.currentTarget.style.border = "none")}
+          className="w-full text-white text-sm mt-4 hover:underline bg-inherit font-medium"
         >
           {isSignUp
             ? "Already have an account? Sign in"
@@ -153,11 +199,17 @@ const Login: React.FC = () => {
         <div className="mt-6 text-center text-xs text-white">
           <p>
             By signing in, you agree to our <br className="md:hidden" />
-            <a href="#" className="text-neutral-300 hover:underline font-bold">
+            <a
+              href="#"
+              className="text-neutral-300 hover:underline font-bold hover:text-neutral-800"
+            >
               Terms
             </a>{" "}
             and{" "}
-            <a href="#" className="text-neutral-300 hover:underline font-bold">
+            <a
+              href="#"
+              className="text-neutral-300 hover:underline font-bold  hover:text-neutral-800"
+            >
               Privacy Policy
             </a>
           </p>
