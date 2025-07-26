@@ -241,10 +241,13 @@ const Chat = () => {
     }
   }, [deleteModal.messageId, isOffline]);
 
-
   return (
     <>
-      <div className="flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden">
+      <div
+        className={`flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden ${
+          previewImage ? "bg-black blur-md" : ""
+        }`}
+      >
         <Sidebar
           users={users}
           usersLoading={usersLoading}

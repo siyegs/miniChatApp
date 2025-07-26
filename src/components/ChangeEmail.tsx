@@ -24,6 +24,7 @@ const ChangeEmail = () => {
       setCurrentPassword("");
     } catch (error: any) {
       setError(error.message);
+      alert(error.message || JSON.stringify(error));
     } finally {
       setIsLoading(false);
     }

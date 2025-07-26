@@ -1,7 +1,9 @@
-import React from "react";
-import { FiUser } from "react-icons/fi";
+import React, { useState, useRef, useEffect } from "react";
+import { FiSettings, FiUser } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import type { User } from "../components/chatUtils";
+import { signOutUser } from "./chatUtils";
+import { FaDoorOpen } from "react-icons/fa";
 
 interface SidebarProps {
   users: User[];
@@ -46,6 +48,28 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const accountModalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        accountModalRef.current &&
+        !accountModalRef.current.contains(event.target as Node)
+      ) {
+        setShowAccountModal(false);
+      }
+    }
+    if (showAccountModal) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showAccountModal]);
+
   return (
     <div
       className={`fixed inset-y-0 left-0 z-30 transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
@@ -70,10 +94,30 @@ const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
           <div
-            className="w-fit cursor-pointer hover:opacity-80 text-[whitesmoke]/85 font-semibold"
-            onClick={() => navigate("/settings")}
+            className="w-fit cursor-pointer hover:opacity-95 text-[whitesmoke]/85 font-semibold relative"
+            onClick={() => setShowAccountModal((v) => !v)}
+            ref={accountModalRef}
           >
             {displayName}
+            {showAccountModal && (
+              <div className="absolute left-0 mt-2 z-50 bg-[whitesmoke] border border-neutral-200 rounded-lg shadow-lg py-2 w-44 px-2 animate-fade-in flex flex-col gap-y-1">
+                <button className="w-full text-left px-4 py-2 rounded-none bg-[#6a578b] hover:bg-[#6a578b]/80 text-sm flex gap-x-2 items-center border-none"
+                onClick={()=> {navigate("/settings")}}>
+                  <FiSettings />
+                  Settings
+                </button>
+                <button
+                  className="w-full text-left px-4 py-2 bg-inherit rounded-none bg-red-500 hover:bg-red-500/80 text-sm flex gap-x-2 items-center border-none"
+                  onClick={async () => {
+                    setShowAccountModal(false);
+                    await signOutUser(navigate);
+                  }}
+                >
+                  <FaDoorOpen />
+                  Sign Out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -169,7 +213,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             : user.isDeleted
                             ? "opacity-50 cursor-not-allowed"
                             : selectedUser?.id === user.id
-                            ? "bg-neutral-100 cursor-pointer text-gray-900 font-semibold"
+                            ? "bg-neutral-100/85 cursor-pointer text-gray-900 font-semibold"
                             : "hover:bg-neutral-50 cursor-pointer text-[whitesmoke]/85 font-semibold hover:text-gray-900 active:text-gray-900 focus:text-gray-900"
                         }`}
                       >
@@ -195,7 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                             <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
                           )}
                         </div>
-                        <span className="flex items-center gap-2 truncate max-w-[140px]">
+                        <span className="flex items-center gap-2 truncate max-w-[140px] text-[clamp(14px,3vw,16px)]">
                           {user.displayName || "Invalid User"}
                         </span>
                       </li>

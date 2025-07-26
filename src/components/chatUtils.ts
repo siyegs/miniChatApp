@@ -389,6 +389,8 @@ export const updateUserEmail = async (
   await updateEmail(auth.currentUser, newEmail);
 };
 
+
+
 export const updateUserPassword = async (
   currentPassword: string,
   newPassword: string
