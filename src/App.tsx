@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
+import Owalum from "./pages/Owalum";
 import { auth } from "./firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import React, { useEffect } from "react";
@@ -47,6 +48,14 @@ function App() {
             <RequireAuth>
               <Chat />
             </RequireAuth>
+          }
+        />
+        <Route
+          path="/owalum"
+          element={
+            // <RequireAuth>
+              <Owalum />
+            // </RequireAuth>
           }
         />
         <Route

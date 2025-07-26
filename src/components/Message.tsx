@@ -1,6 +1,6 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTrash } from "@fortawesome/free-solid-svg-icons";
+import { faTrash, faPen } from "@fortawesome/free-solid-svg-icons";
 import type { Message as MessageType } from "./chatUtils";
 import { formatTime } from "./chatUtils";
 
@@ -27,6 +27,11 @@ const Message: React.FC<MessageProps> = ({
   setDeleteModal,
   setPreviewImage,
 }) => {
+  const isEditable = Date.now() - message.timestamp <= 5 * 60 * 1000; // 5 minutes
+  const isImage = message.text.startsWith("http");
+  const cachedImage = isImage ? localStorage.getItem(`img_${message.text}`) : null;
+  const imageSrc = cachedImage || message.text;
+
   return (
     <div
       className={`flex items-end gap-2 ${
@@ -34,33 +39,37 @@ const Message: React.FC<MessageProps> = ({
       }`}
     >
       <div
-        className={`group relative max-w-[80%] md:max-w-[70%] rounded-2xl px-4 py-2 shadow-lg border transition-all border-black/20 ${
+        className={`group relative max-w-[80%] md:max-w-[70%] rounded-2xl px-4 py-2 shadow-lg transition-all ${
           isCurrentUser
-            ? "bg-gradient-to-br from-neutral-800 to-neutral-900 text-white border-neutral-700 rounded-br-none"
-            : "bg-white text-neutral-900 border-neutral-100 rounded-bl-none"
+            ? "bg-[#743fc9] text-white rounded-br-none ml-auto"
+            : "bg-white/95 text-neutral-900 rounded-bl-none mr-auto"
         }`}
       >
         {isCurrentUser && editingId !== message.id && (
-          <div className="absolute left-[3px] top-full -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-            <button
-              onClick={() => {
-                setEditingId(message.id);
-                setEditingText(message.text);
-              }}
-              className="bg-neutral-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-neutral-800 shadow"
-            >
-              ✎
-            </button>
+          <div className="absolute right-0 bottom-[-10px] opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 mt-1">
+            {isEditable && (
+              <button
+                onClick={() => {
+                  setEditingId(message.id);
+                  setEditingText(message.text);
+                }}
+                className="bg-white/20 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-white/30 backdrop-blur-sm"
+              >
+                <FontAwesomeIcon
+                  icon={faPen}
+                  className="w-2.5 h-2.5 text-neutral-700"
+                />
+              </button>
+            )}
             <button
               onClick={() =>
                 setDeleteModal({ open: true, messageId: message.id })
               }
-              className="bg-neutral-700 rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-neutral-800 shadow"
+              className="bg-white/20 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-white/30 backdrop-blur-sm"
             >
               <FontAwesomeIcon
                 icon={faTrash}
-                className="w-2.5 h-2.5"
-                color="white"
+                className="w-2.5 h-2.5 text-neutral-700"
               />
             </button>
           </div>
@@ -99,13 +108,42 @@ const Message: React.FC<MessageProps> = ({
           </div>
         ) : (
           <div className="text-base break-words whitespace-pre-wrap">
-            {message.text.startsWith("http") ? (
-              <img
-                src={message.text}
-                alt="Uploaded"
-                className="max-w-[180px] max-h-[180px] rounded-lg cursor-pointer"
-                onClick={() => setPreviewImage(message.text)}
-              />
+            {isImage ? (
+              <div className="relative">
+                <img
+                  src={imageSrc}
+                  alt="Uploaded"
+                  className="max-w-[180px] max-h-[180px] rounded-lg cursor-pointer object-cover"
+                  onClick={() => setPreviewImage(message.text)}
+                  onError={(e) => {
+                    e.currentTarget.src = message.text; // Fallback to online URL
+                  }}
+                />
+                {!cachedImage && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-lg">
+                    <svg
+                      className="animate-spin h-6 w-6 text-white"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                      ></path>
+                    </svg>
+                  </div>
+                )}
+              </div>
             ) : (
               message.text
             )}

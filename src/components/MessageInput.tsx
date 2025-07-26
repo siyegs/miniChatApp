@@ -29,12 +29,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
   }, [previewUrl]);
 
   return (
-    <div className="flex p-2 sm:p-4 bg-white/90 border-t border-neutral-200 gap-3">
-      <div className="flex  items-center w-full rounded-3xl  bg-white/90 px-3 gap-4">
+    <div className="flex p-3 md:p-4 bg-gray-700/20 backdrop-blur-md border-t border-[#743fc9]/20 gap-3">
+      <div className="flex items-center w-full rounded-xl bg-white/10 px-4 gap-4">
         <div className="w-full">
           {fileInput && (
-            <div className="relative mr-2">
-              <div className="w-10 h-10 rounded-lg bg-neutral-100 overflow-hidden">
+            <div className="relative mb-2">
+              <div className="w-12 h-12 rounded-lg bg-white/5 overflow-hidden border border-white/10">
                 <img
                   src={previewUrl || ""}
                   alt="Preview"
@@ -43,7 +43,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
               </div>
               <button
                 onClick={() => setFileInput(null)}
-                className="absolute -top-2 -right-2 bg-neutral-800 rounded-full p-1 text-white hover:bg-neutral-900"
+                className="absolute -top-2 -right-2 bg-red-500 rounded-full p-1 text-white hover:bg-red-600 transition-colors"
                 disabled={isUploading}
               >
                 <FiX size={12} />
@@ -58,40 +58,42 @@ const MessageInput: React.FC<MessageInputProps> = ({
             onKeyDown={(e) =>
               e.key === "Enter" && !isUploading && handleSendMessage()
             }
-            className="flex-1 py-2 focus:outline-none w-full rounded-3xl transition-colors text-neutral-900 bg-white/90 placeholder-neutral-400 max-md:placeholder:text-sm"
-            placeholder="Type a message or upload an image..."
-            disabled={isUploading}
-          />
-
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setFileInput(e.target.files?.[0] || null)}
-            className="hidden"
-            id="message-upload"
+            className="w-full py-2 bg-transparent focus:outline-none text-white placeholder-white/60"
+            placeholder="Type a message..."
             disabled={isUploading}
           />
         </div>
 
         <label
           htmlFor="message-upload"
-          className={`cursor-pointer ${isUploading ? "opacity-50" : ""}`}
+          className={`cursor-pointer p-2 hover:bg-white/10 rounded-lg transition-colors ${
+            isUploading ? "opacity-50" : ""
+          }`}
         >
-          <FiUpload className="w-5 h-5 text-neutral-600 hover:text-neutral-900" />
+          <FiUpload className="w-5 h-5 text-white/80" />
         </label>
+
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setFileInput(e.target.files?.[0] || null)}
+          className="hidden"
+          id="message-upload"
+          disabled={isUploading}
+        />
       </div>
 
       <button
         onClick={handleSendMessage}
         disabled={isUploading}
-        className={`px-6 py-2 bg-gradient-to-r from-neutral-900 to-neutral-700 text-white font-semibold rounded-full transition-colors shadow-md ${
-          isUploading
-            ? "opacity-50 cursor-not-allowed"
-            : "hover:from-neutral-800 hover:to-neutral-900"
-        }`}
+        className={`px-4 bg-white/20 text-white rounded-xl transition-colors hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed`}
         aria-label="Send message"
       >
-        {isUploading ? "Sending..." : <FiSend />}
+        {isUploading ? (
+          <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        ) : (
+          <FiSend size={16} />
+        )}
       </button>
     </div>
   );

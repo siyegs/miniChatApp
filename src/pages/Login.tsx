@@ -6,20 +6,27 @@ import {
   signInWithEmailAndPassword,
   fetchSignInMethodsForEmail,
   signOut,
+  updateProfile,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
-import { FiMail, FiLock } from "react-icons/fi";
+import { FiMail, FiLock, FiUser } from "react-icons/fi";
 import loginBG from "/chat-bg1-copy.jpg";
 import iskLogo from "/favicon-white.png";
+import { addOrUpdateUser } from "../components/chatUtils";
 
 const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -31,8 +38,45 @@ const Login: React.FC = () => {
     }
   }, [error]);
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) {
+      setError("Please enter your email address");
+      return;
+    }
+    setLoading(true);
+    try {
+      const methods = await fetchSignInMethodsForEmail(auth, resetEmail);
+      if (!methods.includes("password")) {
+        setError(
+          "This email is not registered with Email/Password authentication."
+        );
+        setLoading(false);
+        return;
+      }
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetSuccess("Password reset email sent. Please check your inbox.");
+      setError(null);
+      setResetEmail("");
+    } catch (err: any) {
+      if (err.code === "auth/user-not-found") {
+        setError("No account exists with this email address.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Please enter a valid email address.");
+      } else {
+        setError("Failed to send reset email. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSignUp && !displayName) {
+      setError("Please enter a display name");
+      return;
+    }
     if (!email || !password) {
       setError("Please fill in all fields");
       return;
@@ -40,32 +84,58 @@ const Login: React.FC = () => {
     setLoading(true);
     try {
       const methods = await fetchSignInMethodsForEmail(auth, email);
-
       if (methods.includes("google.com")) {
         setError(
-          "This email is already registered with Google. Please use Google Sign In instead."
+          "This email is registered with Google. Please use Google Sign In."
+        );
+        setLoading(false);
+        return;
+      }
+      if (isSignUp && methods.includes("password")) {
+        setError(
+          "This email is already registered with Email/Password. Please sign in or use a different email."
         );
         setLoading(false);
         return;
       }
 
+      let userCredential;
       if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        userCredential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+        await updateProfile(userCredential.user, {
+          displayName: displayName || email.split("@")[0],
+        });
+        await addOrUpdateUser(displayName || email.split("@")[0]);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        userCredential = await signInWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+        await addOrUpdateUser(
+          userCredential.user.displayName || email.split("@")[0]
+        );
       }
       navigate("/chat");
     } catch (err: any) {
       if (err.code === "auth/email-already-in-use") {
         setError(
-          "This email is already registered with Google. Please use Google Sign In instead."
+          "This email is already registered with Email/Password. Please sign in or use a different email."
         );
       } else if (err.code === "auth/invalid-credential") {
         setError("Invalid email or password. Please try again.");
       } else if (err.code === "auth/too-many-requests") {
-        setError("Too many failed attempts. Please try again later.");
+        setError(
+          "Too many failed attempts. Please try again later or reset your password."
+        );
+      } else if (err.code === "auth/invalid-email") {
+        setError("Please enter a valid email address.");
       } else {
-        setError("An error occurred. Please try again.");
+        setError("An error occurred during authentication. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -73,40 +143,111 @@ const Login: React.FC = () => {
   };
 
   const handleGoogleSignIn = async () => {
+    setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      // First check if email exists with password auth
       const result = await signInWithPopup(auth, provider);
       const email = result.user?.email;
 
       if (email) {
         const methods = await fetchSignInMethodsForEmail(auth, email);
         if (methods.includes("password")) {
-          // If email exists with password auth, sign out and show error
           await signOut(auth);
           setError(
-            "This email is already registered with Email/Password. Please use Email Sign In instead."
+            "This email is registered with Email/Password. Please use Email Sign In instead."
           );
+          setLoading(false);
           return;
         }
       }
 
+      await addOrUpdateUser(
+        result.user.displayName || email?.split("@")[0] || "User"
+      );
       navigate("/chat");
     } catch (err: any) {
       if (err.code === "auth/account-exists-with-different-credential") {
         setError(
-          "This email is already registered with Email/Password. Please use Email Sign In instead."
+          "This email is registered with Email/Password. Please use Email Sign In instead."
         );
       } else if (err.code === "auth/popup-closed-by-user") {
-        setError("Sign in was cancelled. Please try again.");
+        setError("Google Sign In was cancelled. Please try again.");
       } else if (err.code === "auth/cancelled-popup-request") {
-        // Ignore this error as it's not relevant to users
+        // Ignore this error
+        setLoading(false);
         return;
       } else {
         setError("Failed to sign in with Google. Please try again.");
       }
+    } finally {
+      setLoading(false);
     }
   };
+
+  if (isForgotPassword) {
+    return (
+      <div
+        className="min-h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 flex items-center justify-center px-4"
+        style={{
+          backgroundImage: `url(${loginBG})`,
+          backgroundSize: "300px",
+          backgroundPosition: "center",
+          backgroundRepeat: "repeat",
+        }}
+      >
+        <div className="bg-[#743fc9] w-full max-w-[400px] rounded-[10px] shadow-2xl p-4 sm:p-6">
+          <div className="flex flex-col justify-center items-center mb-6">
+            <img src={iskLogo} alt="isk chat logo" className="w-8 h-8 mb-2" />
+            <p className="text-white text-lg font-semibold">Reset Password</p>
+          </div>
+
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <div className="relative">
+              <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-800" />
+              <input
+                type="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                placeholder="Enter your email"
+                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-neutral-700/90 text-white py-2 rounded-lg hover:bg-neutral-800"
+            >
+              {loading ? "Sending..." : "Send Reset Link"}
+            </button>
+          </form>
+
+          <button
+            onClick={() => {
+              setIsForgotPassword(false);
+              setError(null);
+              setResetSuccess(null);
+            }}
+            className="w-full text-white text-sm mt-4 hover:underline"
+          >
+            Back to Login
+          </button>
+
+          {error && (
+            <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          {resetSuccess && (
+            <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm">
+              {resetSuccess}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -127,29 +268,54 @@ const Login: React.FC = () => {
         </div>
 
         <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+          {isSignUp && (
+            <div className="relative">
+              <FiUser className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-700" />
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Display Name"
+                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,15px)]"
+              />
+            </div>
+          )}
           <div>
             <div className="relative">
-              <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-800" />
+              <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-700" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
-                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,23px)]"
+                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,15px)]"
               />
             </div>
           </div>
           <div>
             <div className="relative">
-              <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-800" />
+              <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-700" />
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,23px)]"
+                className="w-full pl-10 pr-4 py-2 bg-[whitesmoke]/40 rounded-lg focus:outline-none placeholder:text-gray-600 placeholder:text-[clamp(13px,3vw,15px)]"
               />
             </div>
+            {!isSignUp && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(true);
+                  setError(null);
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.border = "none")}
+                className="w-full text-white font-medium text-sm hover:underline text-right bg-inherit hover:outline-none mt-1"
+              >
+                Forgot Password?
+              </button>
+            )}
           </div>
           <button
             type="submit"
@@ -161,7 +327,7 @@ const Login: React.FC = () => {
           </button>
         </form>
 
-        <div className="relative mb-6">
+        {/* <div className="relative mb-6">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-neutral-300"></div>
           </div>
@@ -170,20 +336,24 @@ const Login: React.FC = () => {
               Or continue with
             </span>
           </div>
-        </div>
+        </div> */}
 
-        <button
+        {/* <button
           onClick={handleGoogleSignIn}
+          disabled={loading}
           className="w-full flex items-center justify-center gap-2 bg-[whitesmoke]/90 border border-neutral-200 text-neutral-900 py-2 rounded-lg hover:bg-neutral-50 transition-colors duration-300"
         >
           <FcGoogle className="text-xl" />
           <span>Google</span>
-        </button>
+        </button> */}
 
         <button
-          onClick={() => setIsSignUp(!isSignUp)}
+          onClick={() => {
+            setIsSignUp(!isSignUp);
+            setError(null);
+          }}
           onMouseOver={(e) => (e.currentTarget.style.border = "none")}
-          className="w-full text-white text-sm mt-4 hover:underline bg-inherit font-medium"
+          className="w-full text-white text-sm mt-4 hover:underline bg-inherit font-medium focus:outline-none"
         >
           {isSignUp
             ? "Already have an account? Sign in"
@@ -208,7 +378,7 @@ const Login: React.FC = () => {
             and{" "}
             <a
               href="#"
-              className="text-neutral-300 hover:underline font-bold  hover:text-neutral-800"
+              className="text-neutral-300 hover:underline font-bold hover:text-neutral-800"
             >
               Privacy Policy
             </a>

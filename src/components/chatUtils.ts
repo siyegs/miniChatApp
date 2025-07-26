@@ -46,9 +46,10 @@ export interface User {
 export const addOrUpdateUser = async (displayName: string) => {
   if (!auth.currentUser) {
     console.error("No authenticated user");
-    return;
+    throw new Error("No authenticated user");
   }
-  let fallbackName = auth.currentUser.displayName;
+
+  let fallbackName = displayName;
   if (!fallbackName || !fallbackName.trim()) {
     if (auth.currentUser.email) {
       fallbackName = auth.currentUser.email.split("@")[0];
@@ -56,28 +57,49 @@ export const addOrUpdateUser = async (displayName: string) => {
       fallbackName = "User";
     }
   }
+
+  const providerId = auth.currentUser.providerData[0]?.providerId || "unknown";
+  console.log(`Updating user with provider: ${providerId}`);
+
   try {
     await setDoc(
       doc(db, "users", auth.currentUser.uid),
       {
-        displayName: displayName.trim() || fallbackName,
+        displayName: fallbackName.trim(),
         lastSeen: Date.now(),
         photoURL: auth.currentUser.photoURL || "",
         isDeleted: false,
         createdAt: Date.now(),
-        email: auth.currentUser.email,
-        provider: auth.currentUser.providerData[0]?.providerId || "unknown",
+        email: auth.currentUser.email || "",
+        provider: providerId, // e.g., "password" or "google.com"
       },
       { merge: true }
     );
+
+    // Update auth profile if needed
+    if (auth.currentUser.displayName !== fallbackName) {
+      await updateProfile(auth.currentUser, {
+        displayName: fallbackName,
+      });
+    }
   } catch (error) {
     console.error("Error updating user:", error);
+    throw error;
   }
 };
 
 // Listen for users (returns unsubscribe function)
 export const listenForUsers = (callback: (users: User[]) => void) => {
   const messagesRef = collection(db, "messages");
+
+  // First, update the current user's information
+  if (auth.currentUser) {
+    addOrUpdateUser(
+      auth.currentUser.displayName ||
+        auth.currentUser.email?.split("@")[0] ||
+        "User"
+    );
+  }
 
   return onSnapshot(
     query(collection(db, "users")),
@@ -147,6 +169,12 @@ export const listenForMessages = (
     q = query(messagesRef, where("isPrivate", "==", false));
   }
 
+  // Load cached messages immediately
+  const cachedMessages = getCachedMessages(selectedUser);
+  if (cachedMessages.length > 0) {
+    callback(cachedMessages.sort((a, b) => a.timestamp - b.timestamp));
+  }
+
   return onSnapshot(
     q,
     (snapshot) => {
@@ -154,66 +182,98 @@ export const listenForMessages = (
         id: doc.id,
         ...doc.data(),
       })) as Message[];
-      const currentUid = auth.currentUser?.uid;
+
       const filteredMessages = selectedUser
         ? msgData.filter(
             (msg) =>
-              currentUid &&
-              msg.participants &&
-              msg.participants.includes(currentUid) &&
-              msg.participants.includes(selectedUser.id)
+              msg.participants?.includes(auth.currentUser?.uid || "") &&
+              msg.participants?.includes(selectedUser.id)
           )
-        : msgData;
+        : msgData.filter((msg) => !msg.isPrivate);
+
+      // Cache messages
+      cacheMessages(msgData, selectedUser);
+
       callback(filteredMessages.sort((a, b) => a.timestamp - b.timestamp));
     },
-    (error) => console.error("Listen error:", error)
+    (error) => {
+      console.error("Listen error:", error);
+      // Use cached messages on error
+      const cachedMessages = getCachedMessages(selectedUser);
+      callback(cachedMessages.sort((a, b) => a.timestamp - b.timestamp));
+    }
   );
 };
 
 // Update display name
-export const updateUserDisplayName = async (displayName: string) => {
-  if (
-    auth.currentUser &&
-    displayName.trim() !== (auth.currentUser.displayName || "")
-  ) {
-    await updateProfile(auth.currentUser, {
-      displayName: displayName.trim(),
-    });
-    await setDoc(
-      doc(db, "users", auth.currentUser.uid),
-      {
-        displayName: displayName.trim(),
-      },
-      { merge: true }
-    );
+export const updateUserDisplayName = async (
+  displayName: string,
+  photoURL?: string
+) => {
+  if (!auth.currentUser) return;
+
+  const updates: { displayName: string; photoURL?: string } = {
+    displayName: displayName.trim(),
+  };
+
+  if (photoURL) {
+    updates.photoURL = photoURL;
   }
+
+  await updateProfile(auth.currentUser, updates);
+  await setDoc(
+    doc(db, "users", auth.currentUser.uid),
+    {
+      ...updates,
+      lastSeen: Date.now(),
+    },
+    { merge: true }
+  );
 };
 
+// Send message
 // Send message
 export const sendMessage = async (
   content: string,
   displayName: string,
-  selectedUser: User | null
-) => {
-  if (!content.trim() || !auth.currentUser) return;
+  selectedUser: User | null,
+  file?: File
+ ) => {
+  if (!auth.currentUser) return;
+  if (!content.trim() && !file) return;
+ 
+  let messageText = content;
+ 
+  // Upload image if provided
+  if (file) {
+  try {
+  const imageUrl = await uploadToImgBB(file, import.meta.env.VITE_IMGBB_API_KEY);
+  messageText = imageUrl;
+  } catch (error) {
+  console.error("Failed to upload image:", error);
+  throw new Error("Image upload failed");
+  }
+  }
+ 
   const messageData = {
-    text: content,
-    user: displayName || auth.currentUser.displayName || "Anonymous",
-    timestamp: Date.now(),
-    isPrivate: !!selectedUser,
-    from: auth.currentUser.uid,
+  text: messageText,
+  user: displayName || auth.currentUser.displayName || "Anonymous",
+  timestamp: Date.now(),
+  isPrivate: !!selectedUser,
+  from: auth.currentUser.uid,
   } as any; // Type assertion to allow dynamic properties
   if (selectedUser) {
-    messageData.to = selectedUser.id;
-    messageData.participants = [auth.currentUser.uid, selectedUser.id].sort();
+  messageData.to = selectedUser.id;
+  messageData.participants = [auth.currentUser.uid, selectedUser.id].sort();
   }
   try {
-    const docRef = await addDoc(collection(db, "messages"), messageData);
-    console.log("Message sent with ID:", docRef.id, messageData);
+  const docRef = await addDoc(collection(db, "messages"), messageData);
+  console.log("Message sent with ID:", docRef.id, messageData);
   } catch (error) {
-    console.error("Error sending message:", error as any);
+  console.error("Error sending message:", error as any);
+  throw error;
   }
-};
+ };
 
 // Sign out
 export const signOutUser = async (navigate: (path: string) => void) => {
@@ -355,4 +415,88 @@ export const deleteUserAccount = async () => {
 
   // Delete the user account from Firebase Auth
   await deleteUser(auth.currentUser);
+};
+
+const getUserSpecificCacheKey = (
+  userId: string | undefined,
+  targetUserId?: string
+) => {
+  if (!userId) return null;
+  return targetUserId
+    ? `messages_${userId}_${targetUserId}`
+    : `messages_global_${userId}`;
+};
+
+
+export const cacheMessages = (
+  messages: Message[],
+  selectedUser: User | null
+) => {
+  if (!auth.currentUser?.uid) return;
+
+  try {
+    // Split messages into global and private
+    const globalMessages = messages.filter((msg) => !msg.isPrivate);
+    const privateMessages = messages.filter((msg) => msg.isPrivate);
+
+    // Cache global messages
+    const globalKey = getUserSpecificCacheKey(auth.currentUser.uid);
+    if (globalKey) {
+      localStorage.setItem(globalKey, JSON.stringify(globalMessages));
+    }
+
+    // Cache private messages per user
+    const uniqueUserIds = new Set(
+      privateMessages.flatMap((msg) => msg.participants || [])
+    );
+    uniqueUserIds.forEach((userId) => {
+      if (userId === auth.currentUser?.uid) return;
+      if (!auth.currentUser?.uid) return;
+      const userKey = getUserSpecificCacheKey(auth.currentUser.uid, userId);
+      if (!userKey) return;
+
+      const userMessages = privateMessages.filter((msg) =>
+        msg.participants?.includes(userId)
+      );
+      localStorage.setItem(userKey, JSON.stringify(userMessages));
+    });
+  } catch (error) {
+    console.error("Error caching messages:", error);
+  }
+};
+
+export const getCachedMessages = (selectedUser: User | null): Message[] => {
+  if (!auth.currentUser?.uid) return [];
+
+  try {
+    let messages: Message[] = [];
+
+    if (selectedUser) {
+      // Get private messages for selected user
+      const privateKey = getUserSpecificCacheKey(
+        auth.currentUser.uid,
+        selectedUser.id
+      );
+      if (privateKey) {
+        const cached = localStorage.getItem(privateKey);
+        if (cached) {
+          messages = JSON.parse(cached);
+        }
+      }
+    } else {
+      // Get global messages
+      const globalKey = getUserSpecificCacheKey(auth.currentUser.uid);
+      if (globalKey) {
+        const cached = localStorage.getItem(globalKey);
+        if (cached) {
+          messages = JSON.parse(cached);
+        }
+      }
+    }
+
+    return messages;
+  } catch (error) {
+    console.error("Error getting cached messages:", error);
+    return [];
+  }
 };

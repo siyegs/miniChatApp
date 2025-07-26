@@ -6,7 +6,7 @@ import type { User } from "../components/chatUtils";
 interface SidebarProps {
   users: User[];
   usersLoading: boolean;
-  selectedUser: User | null;
+  selectedUser: User | null | undefined; // Allow undefined
   setSelectedUser: (user: User | null) => void;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (open: boolean) => void;
@@ -33,14 +33,13 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navigate = useNavigate();
 
-  // Add validation to filter out invalid users
   const activeUsers = users.filter(
     (user) => !user.isDeleted && user.displayName
   );
   const pastUsers = users.filter((user) => user.isDeleted && user.displayName);
 
   const handleUserClick = (user: User) => {
-    if (!user.displayName) return; // Don't allow clicking users without displayName
+    if (!user.displayName || selectedUser === undefined) return; // Disable clicks during loading
     if (!user.isDeleted) {
       setSelectedUser(user);
       setIsSidebarOpen(false);
@@ -51,12 +50,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     <div
       className={`fixed inset-y-0 left-0 z-30 transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      } max-md:w-full bg-white/90 backdrop-blur-md shadow-xl text-neutral-900 flex flex-col border-r border-neutral-200`}
+      } max-md:w-[65%] bg-gradient-to-b from-[#7a5fa7]/80 to-[#5a3f87]/70 backdrop-blur-md shadow-xl text-white flex flex-col border-r border-[#743fc9]/20`}
     >
-      {/* User Info & Actions */}
-      <div className="p-4 border-b border-neutral-200">
+      <div className="p-4 border-b border-white/10">
         <div className="flex items-center gap-3 mb-4">
-          <div className="img-holder w-8 h-8 rounded-full bg-neutral-900 flex items-center justify-center overflow-hidden border border-red-900 cursor-pointer">
+          <div className="img-holder w-8 h-8 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/20 cursor-pointer hover:border-white/40 transition-colors">
             {photoURL ? (
               <img
                 src={photoURL}
@@ -72,14 +70,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
           <div
-            className="w-fit cursor-pointer hover:opacity-80"
+            className="w-fit cursor-pointer hover:opacity-80 text-[whitesmoke]/85 font-semibold"
             onClick={() => navigate("/settings")}
           >
             {displayName}
           </div>
         </div>
       </div>
-      {/* User List */}
+
       <div className="flex-1 overflow-y-auto pt-3 no-scrollbar">
         <div className="px-4 pb-2">
           <input
@@ -87,28 +85,34 @@ const Sidebar: React.FC<SidebarProps> = ({
             value={userSearch || ""}
             onChange={(e) => setUserSearch(e.target.value)}
             placeholder="Search users..."
-            className="w-full px-3 py-1 border placeholder:text-sm text-neutral-900 border-neutral-300 rounded mb-2 focus:outline-none focus:border-neutral-700"
+            className="w-full px-3 py-1.5 border bg-white/10 placeholder:text-white/60 text-white border-white/10 rounded-lg mb-2 focus:outline-none focus:border-white/30"
+            disabled={selectedUser === undefined}
           />
         </div>
+
         <ul>
           <li
             key="global"
             onClick={() => {
-              setSelectedUser(null), setIsSidebarOpen(false);
+              if (selectedUser === undefined) return;
+              setSelectedUser(null);
+              setIsSidebarOpen(false);
             }}
             className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors rounded-lg mx-2 mb-1 ${
               !selectedUser
-                ? "bg-neutral-100 text-neutral-900"
-                : "hover:bg-neutral-50 text-neutral-700"
+                ? "bg-white/20 text-white"
+                : "hover:bg-white/10 text-white/80"
+            } ${
+              selectedUser === undefined ? "opacity-50 cursor-not-allowed" : ""
             }`}
           >
-            <div className="w-10 h-10 rounded-full bg-neutral-900 flex items-center justify-center text-white font-bold">
+            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white font-bold">
               #
             </div>
             <span className="font-semibold">Global Chat</span>
           </li>
-          <hr className="border border-slate-200 mx-2" />
-          <div className="p-4 text-sm font-semibold text-neutral-700 flex items-center justify-between">
+          <hr className="border border-gray-600 mx-2 mt-4" />
+          <div className="p-4 text-sm font-semibold text-neutral-800 flex items-center justify-between">
             <span>Active Users</span>
             {usersLoading && (
               <div className="animate-spin w-4 h-4 border-2 border-neutral-600 border-t-transparent rounded-full" />
@@ -141,56 +145,65 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           ) : (
             <>
-              {activeUsers
-                .filter(
-                  (user) =>
-                    !userSearch ||
-                    user.displayName
-                      ?.toLowerCase()
-                      .includes(userSearch.toLowerCase())
-                )
-                .map((user) => (
-                  <li
-                    key={user.id}
-                    onClick={() => handleUserClick(user)}
-                    className={`flex items-center gap-3 px-4 py-2 transition-colors rounded-lg mx-2 mb-1 ${
-                      !user.displayName
-                        ? "opacity-50 cursor-not-allowed"
-                        : user.isDeleted
-                        ? "opacity-50 cursor-not-allowed"
-                        : selectedUser?.id === user.id
-                        ? "bg-neutral-100 text-neutral-900 cursor-pointer"
-                        : "hover:bg-neutral-50 text-neutral-700 cursor-pointer"
-                    }`}
-                  >
-                    <div className="relative">
-                      <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-white font-bold overflow-hidden">
-                        {user.photoURL ? (
-                          <img
-                            src={user.photoURL}
-                            alt="Profile"
-                            className="w-full h-full object-cover cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (user.photoURL) {
-                                setPreviewImage(user.photoURL);
-                              }
-                            }}
-                          />
-                        ) : (
-                          (user.displayName?.charAt(0) || "?").toUpperCase()
-                        )}
-                      </div>
-                      {user.isDeleted && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
-                      )}
-                    </div>
-                    <span className="flex items-center gap-2">
-                      {user.displayName || "Invalid User"}
-                    </span>
-                  </li>
-                ))}
+              {activeUsers.length === 0 ? (
+                <div className="text-center py-6 text-neutral-500">
+                  <span>No users yet</span>
+                </div>
+              ) : (
+                <>
+                  {activeUsers
+                    .filter(
+                      (user) =>
+                        !userSearch ||
+                        user.displayName
+                          ?.toLowerCase()
+                          .includes(userSearch.toLowerCase())
+                    )
+                    .map((user) => (
+                      <li
+                        key={user.id}
+                        onClick={() => handleUserClick(user)}
+                        className={`flex items-center gap-3 px-4 py-2 transition-colors rounded-lg mx-2 mb-1  ${
+                          !user.displayName || selectedUser === undefined
+                            ? "opacity-50 cursor-not-allowed"
+                            : user.isDeleted
+                            ? "opacity-50 cursor-not-allowed"
+                            : selectedUser?.id === user.id
+                            ? "bg-neutral-100 cursor-pointer text-gray-900 font-semibold"
+                            : "hover:bg-neutral-50 cursor-pointer text-[whitesmoke]/85 font-semibold hover:text-gray-900 active:text-gray-900 focus:text-gray-900"
+                        }`}
+                      >
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-white font-bold overflow-hidden">
+                            {user.photoURL ? (
+                              <img
+                                src={user.photoURL}
+                                alt="Profile"
+                                className="w-full h-full object-cover cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (user.photoURL) {
+                                    setPreviewImage(user.photoURL);
+                                  }
+                                }}
+                              />
+                            ) : (
+                              (user.displayName?.charAt(0) || "?").toUpperCase()
+                            )}
+                          </div>
+                          {user.isDeleted && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white" />
+                          )}
+                        </div>
+                        <span className="flex items-center gap-2 truncate max-w-[140px]">
+                          {user.displayName || "Invalid User"}
+                        </span>
+                      </li>
+                    ))}
+                </>
+              )}
 
+              {/* past users */}
               {pastUsers.length > 0 && (
                 <>
                   <div className="p-4 text-sm font-semibold text-neutral-700">
@@ -208,13 +221,13 @@ const Sidebar: React.FC<SidebarProps> = ({
                       <li
                         key={user.id}
                         onClick={() => {
-                          if (!user.isDeleted) {
+                          if (!user.isDeleted && selectedUser !== undefined) {
                             setSelectedUser(user);
                             setIsSidebarOpen(false);
                           }
                         }}
                         className={`flex items-center gap-3 px-4 py-2 transition-colors rounded-lg mx-2 mb-1 ${
-                          user.isDeleted
+                          user.isDeleted || selectedUser === undefined
                             ? "opacity-50 cursor-not-allowed"
                             : selectedUser?.id === user.id
                             ? "bg-neutral-100 text-neutral-900 cursor-pointer"
