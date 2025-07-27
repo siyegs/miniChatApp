@@ -1,17 +1,13 @@
 import { useState, useEffect } from "react";
 import {
-  signInWithPopup,
-  GoogleAuthProvider,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   fetchSignInMethodsForEmail,
-  signOut,
   updateProfile,
   sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import { FcGoogle } from "react-icons/fc";
 import { FiMail, FiLock, FiUser } from "react-icons/fi";
 import loginBG from "/chat-bg1-copy.jpg";
 import iskLogo from "/favicon-white.png";
@@ -142,47 +138,47 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const email = result.user?.email;
+  // const handleGoogleSignIn = async () => {
+  //   setLoading(true);
+  //   try {
+  //     const provider = new GoogleAuthProvider();
+  //     const result = await signInWithPopup(auth, provider);
+  //     const email = result.user?.email;
 
-      if (email) {
-        const methods = await fetchSignInMethodsForEmail(auth, email);
-        if (methods.includes("password")) {
-          await signOut(auth);
-          setError(
-            "This email is registered with Email/Password. Please use Email Sign In instead."
-          );
-          setLoading(false);
-          return;
-        }
-      }
+  //     if (email) {
+  //       const methods = await fetchSignInMethodsForEmail(auth, email);
+  //       if (methods.includes("password")) {
+  //         await signOut(auth);
+  //         setError(
+  //           "This email is registered with Email/Password. Please use Email Sign In instead."
+  //         );
+  //         setLoading(false);
+  //         return;
+  //       }
+  //     }
 
-      await addOrUpdateUser(
-        result.user.displayName || email?.split("@")[0] || "User"
-      );
-      navigate("/chat");
-    } catch (err: any) {
-      if (err.code === "auth/account-exists-with-different-credential") {
-        setError(
-          "This email is registered with Email/Password. Please use Email Sign In instead."
-        );
-      } else if (err.code === "auth/popup-closed-by-user") {
-        setError("Google Sign In was cancelled. Please try again.");
-      } else if (err.code === "auth/cancelled-popup-request") {
-        // Ignore this error
-        setLoading(false);
-        return;
-      } else {
-        setError("Failed to sign in with Google. Please try again.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+  //     await addOrUpdateUser(
+  //       result.user.displayName || email?.split("@")[0] || "User"
+  //     );
+  //     navigate("/chat");
+  //   } catch (err: any) {
+  //     if (err.code === "auth/account-exists-with-different-credential") {
+  //       setError(
+  //         "This email is registered with Email/Password. Please use Email Sign In instead."
+  //       );
+  //     } else if (err.code === "auth/popup-closed-by-user") {
+  //       setError("Google Sign In was cancelled. Please try again.");
+  //     } else if (err.code === "auth/cancelled-popup-request") {
+  //       // Ignore this error
+  //       setLoading(false);
+  //       return;
+  //     } else {
+  //       setError("Failed to sign in with Google. Please try again.");
+  //     }
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   if (isForgotPassword) {
     return (

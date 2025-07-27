@@ -1,9 +1,9 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { FiUser, FiMail, FiLock, FiTrash2, FiArrowLeft } from "react-icons/fi";
-import PersonalInfo from "../components/PersonalInfo";
-import ChangeEmail from "../components/ChangeEmail";
-import PasswordChange from "../components/PasswordChange";
-import DeleteAccount from "../components/DeleteAccount";
+import PersonalInfo from "../components/settings-components/PersonalInfo";
+import ChangeEmail from "../components/settings-components/ChangeEmail";
+import PasswordChange from "../components/settings-components/PasswordChange";
+import DeleteAccount from "../components/settings-components/DeleteAccount";
 import { useNavigate } from "react-router-dom";
 
 const Settings = () => {
@@ -16,13 +16,14 @@ const Settings = () => {
     { id: "delete", label: "Delete Account", icon: <FiTrash2 /> },
   ];
 
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   return (
     <div className="w-screen h-screen bg-gray-50 overflow-hidden pb-6">
       <div className="w-full max-w-4xl mx-auto px-4 py-7">
-        <button className="bg-inherit border-none mb-5 text-gray-800 px-3"
-        onClick={()=>navigate("/chat") }
+        <button
+          className="bg-inherit border-none mb-5 text-gray-800 px-3"
+          onClick={() => navigate("/chat")}
         >
           <FiArrowLeft />
         </button>
@@ -35,11 +36,14 @@ const Settings = () => {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={(e) => {
+                setActiveTab(tab.id);
+                e.currentTarget.style.outlineOffset = "none";
+              }}
               onMouseOver={(e) => {
                 e.currentTarget.style.border = "none";
               }}
-              className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-all
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg transition-all active:border-none focus:border-none outline-none focus:outline-none border-none
                 ${
                   activeTab === tab.id
                     ? "bg-black text-white shadow-lg"
@@ -52,7 +56,7 @@ const Settings = () => {
             </button>
           ))}
         </div>
-        <div className="bg-white rounded-2xl shadow-sm h-fit">
+        <div className="bg-white rounded-2xl shadow-2xl h-fit max-w-[500px] mx-auto">
           <div className="p-1 h-fit">
             {activeTab === "personal" && <PersonalInfo />}
             {activeTab === "email" && <ChangeEmail />}

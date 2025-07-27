@@ -1,60 +1,61 @@
-import { useState, useEffect, useCallback } from "react";
-import { auth } from "../firebase";
+// src/pages/Chat.tsx
+
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { auth, db } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import { FiMessageSquare } from "react-icons/fi";
+import { FiMessageSquare,} from "react-icons/fi";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import {
   listenForUsers,
-  listenForMessages,
   sendMessage,
   signOutUser,
   editMessage,
   deleteMessage,
-  getCachedMessages,
+  listenForAllChatRequests,
+  sendChatRequest,
+  revokeChatAccess,
+  listenForMessages,
+  getMutedChats, // For mute persistence
+  setMutedChats, // For mute persistence
 } from "../components/chatUtils";
-import type { User, Message as MessageType } from "../components/chatUtils";
+import type {
+  User,
+  Message as MessageType,
+  ChatRequest,
+} from "../components/chatUtils";
 import ImageModal from "../components/ImageModal";
 import ConfirmModal from "../components/ConfirmModal";
 import Sidebar from "../components/Sidebar";
 import ChatHeader from "../components/ChatHeader";
 import MessageInput from "../components/MessageInput";
 import Message from "../components/Message";
+import ChatRequestModal from "../components/ChatRequestModal";
 import chatPattern from "/chat-bg3-copy.jpg";
 
-// Custom hook for persistent selected chat
+// This custom hook is working correctly for persistence. No changes needed.
 function usePersistentSelectedChat(
   users: User[],
   usersLoading: boolean
-): [User | null, (user: User | null) => void] {
-  const [selectedUser, setSelectedUserState] = useState<
-    User | null | undefined
-  >(undefined); // undefined = loading
-
-  // On users loaded, restore from localStorage
+): [User | null | undefined, (user: User | null) => void] {
+  const [selectedUser, setSelectedUserState] = useState<User | null | undefined>(undefined);
   useEffect(() => {
     if (usersLoading) return;
     const chatId = localStorage.getItem("selectedChat");
     if (chatId && chatId !== "global") {
-      const user = users.find((u: User) => u.id === chatId && !u.isDeleted);
+      const user = users.find((u) => u.id === chatId && !u.isDeleted);
       if (user) {
         setSelectedUserState(user);
         return;
       }
     }
-    // Default to global if not found
     setSelectedUserState(null);
     localStorage.setItem("selectedChat", "global");
   }, [users, usersLoading]);
 
-  // When selectedUser changes, persist to localStorage
   const setSelectedUser = (userOrNull: User | null) => {
     setSelectedUserState(userOrNull);
-    if (userOrNull) {
-      localStorage.setItem("selectedChat", userOrNull.id);
-    } else {
-      localStorage.setItem("selectedChat", "global");
-    }
+    localStorage.setItem("selectedChat", userOrNull ? userOrNull.id : "global");
   };
-
   return [selectedUser, setSelectedUser];
 }
 
@@ -62,194 +63,196 @@ const Chat = () => {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [selectedUser, setSelectedUser] = usePersistentSelectedChat(
-    users,
-    usersLoading
-  );
+  const [selectedUser, setSelectedUserState] = usePersistentSelectedChat(users, usersLoading);
   const [newMessage, setNewMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [deleteModal, setDeleteModal] = useState<{
-    open: boolean;
-    messageId: string | null;
-  }>({ open: false, messageId: null });
+  const [deleteModal, setDeleteModal] = useState({ open: false, messageId: null as string | null });
+  const [revokeModal, setRevokeModal] = useState({ open: false, userToRevoke: null as User | null });
+  const [unreadMessages, setUnreadMessages] = useState<{ [userId: string]: boolean }>({});
+  const [mutedChats, setMutedChats] = useState<string[]>([]); // Mute state
   const [userSearch, setUserSearch] = useState("");
   const [fileInput, setFileInput] = useState<File | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [isUploading, setIsUploading] = useState(false);
-
+  const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
+  const [showChatRequests, setShowChatRequests] = useState(false);
   const navigate = useNavigate();
-
-  // Add image caching function with storage cleanup
-  const cacheImage = useCallback(async (url: string) => {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = () => {
-        const base64data = reader.result as string;
-        try {
-          // Clean up old images if storage is near limit
-          const maxStorageSize = 5 * 1024 * 1024; // 5MB
-          let totalSize = 0;
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key?.startsWith("img_")) {
-              totalSize += ((localStorage.getItem(key)?.length || 0) * 3) / 4;
-            }
-          }
-          if (totalSize > maxStorageSize * 0.8) {
-            const imageKeys = Object.keys(localStorage)
-              .filter((key) => key.startsWith("img_"))
-              .slice(0, 5);
-            imageKeys.forEach((key) => localStorage.removeItem(key));
-          }
-          localStorage.setItem(`img_${url}`, base64data);
-          console.log(`Cached image: ${url}`);
-        } catch (error) {
-          console.error("Error saving image to localStorage:", error);
-          alert("Failed to cache image. Storage may be full.");
-        }
-      };
-    } catch (error) {
-      console.error("Error caching image:", error);
-    }
-  }, []);
+  const prevRequestsRef = useRef<ChatRequest[]>();
+  const chimeRef = useRef<HTMLAudioElement | null>(null);
+  const selectedUserRef = useRef<User | null | undefined>();
+  const componentMountTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!auth.currentUser) {
-      navigate("/login");
-      return;
-    }
+    chimeRef.current = new Audio('/chime.mp3');
+    chimeRef.current.volume = 0.5;
+    componentMountTimeRef.current = Date.now();
+    setMutedChats(getMutedChats()); // Load muted chats from localStorage on mount
+  }, []);
+  
+  useEffect(() => {
+      selectedUserRef.current = selectedUser;
+  }, [selectedUser]);
 
-    const unsubscribeUsers = listenForUsers((userList) => {
-      console.log(
-        "Users loaded:",
-        userList.map((u) => ({
-          id: u.id,
-          displayName: u.displayName,
-          isDeleted: u.isDeleted,
-        }))
-      );
+  const setSelectedUser = (userOrNull: User | null) => {
+    setSelectedUserState(userOrNull);
+    const chatToClear = userOrNull ? userOrNull.id : 'global';
+    setUnreadMessages(prev => {
+      const newUnread = { ...prev };
+      delete newUnread[chatToClear];
+      return newUnread;
+    });
+  };
+
+  const toggleMuteChat = (chatId: string) => {
+    const isMuted = mutedChats.includes(chatId);
+    let updatedMuted;
+    if (isMuted) {
+      updatedMuted = mutedChats.filter(id => id !== chatId);
+    } else {
+      updatedMuted = [...mutedChats, chatId];
+    }
+    setMutedChats(updatedMuted);
+    setMutedChats(updatedMuted); // Persist to localStorage
+  };
+  
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const unsubscribe = listenForUsers((userList) => {
       setUsers(userList);
       setUsersLoading(false);
     });
-
-    return () => unsubscribeUsers();
-  }, [navigate]);
-
-  // Load cached messages immediately on mount
+    return unsubscribe;
+  }, []);
+  
+  // Listener for displaying messages
   useEffect(() => {
     if (selectedUser === undefined) return;
-    const cachedMessages = getCachedMessages(selectedUser);
-    if (cachedMessages.length > 0) {
-      setMessages(cachedMessages.sort((a, b) => a.timestamp - b.timestamp));
-      console.log("Loaded cached messages:", cachedMessages.length);
-    }
+    const unsubscribe = listenForMessages(selectedUser, setMessages);
+    return unsubscribe;
   }, [selectedUser]);
 
+  // Listener for ALL notifications
   useEffect(() => {
-    if (selectedUser === undefined) return;
-    const unsubscribe = listenForMessages(selectedUser, (msgs) => {
-      setMessages(msgs);
-      console.log("Firestore messages loaded:", msgs.length);
-    });
-    return () => unsubscribe();
-  }, [selectedUser]);
-
-  // Cache images effect
-  useEffect(() => {
-    messages.forEach((msg) => {
-      if (msg.text.startsWith("http")) {
-        const cached = localStorage.getItem(`img_${msg.text}`);
-        if (!cached && !isOffline) {
-          cacheImage(msg.text);
+    if (!auth.currentUser) return () => {};
+    const q = query(
+      collection(db, "messages"),
+      where("from", "!=", auth.currentUser.uid)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const message = { id: change.doc.id, ...change.doc.data() } as MessageType;
+        if (change.type === "added" && message.timestamp > (componentMountTimeRef.current || 0)) {
+          const chatId = message.isPrivate ? message.from! : 'global';
+          const currentChatId = selectedUserRef.current ? selectedUserRef.current.id : 'global';
+          
+          // If the message is not for the currently open chat
+          if (chatId !== currentChatId) {
+            setUnreadMessages(prev => ({ ...prev, [chatId]: true }));
+            // Only play chime if the chat is not muted
+            if (!mutedChats.includes(chatId)) {
+              chimeRef.current?.play().catch(e => console.error("Chime play error:", e));
+            }
+          }
         }
+      });
+    });
+    return unsubscribe;
+  }, [mutedChats]); // Re-subscribe if mutedChats changes
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const unsubscribe = listenForAllChatRequests((requests) => {
+      setChatRequests(requests);
+      if (requests.some(req => req.toUserId === auth.currentUser?.uid && req.status === 'pending')) {
+        setShowChatRequests(true);
       }
     });
-  }, [messages, cacheImage, isOffline]);
-
-  // Add online/offline detection
-  useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
+    return unsubscribe;
   }, []);
 
-  const handleSendMessage = useCallback(async () => {
-    if (!newMessage.trim() && !fileInput) return;
-    if (!auth.currentUser?.displayName) return;
-    if (isOffline) {
-      alert("You are offline. Please reconnect to send messages.");
-      return;
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const prevRequests = prevRequestsRef.current;
+    if (prevRequests) {
+      chatRequests.forEach(newRequest => {
+        const prevRequest = prevRequests.find(pr => pr.id === newRequest.id);
+        if (prevRequest && newRequest.fromUserId === auth.currentUser?.uid && prevRequest.status === 'pending') {
+          const recipient = users.find(u => u.id === newRequest.toUserId);
+          const recipientName = recipient ? recipient.displayName : 'A user';
+          if (newRequest.status === 'accepted') alert(`Your chat request with ${recipientName} was accepted!`);
+          else if (newRequest.status === 'rejected') alert(`Your chat request with ${recipientName} was rejected.`);
+        }
+      });
     }
+    prevRequestsRef.current = chatRequests;
+  }, [chatRequests, users]);
 
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => {
+      const aHasUnread = unreadMessages[a.id];
+      const bHasUnread = unreadMessages[b.id];
+      if (aHasUnread && !bHasUnread) return -1;
+      if (!aHasUnread && bHasUnread) return 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [users, unreadMessages]);
+
+  const handleRevokeAccess = async () => {
+    const userToRevoke = revokeModal.userToRevoke;
+    if (!userToRevoke || !auth.currentUser) return;
+    try {
+      await revokeChatAccess(auth.currentUser.uid, userToRevoke.id);
+      if (selectedUser?.id === userToRevoke.id) setSelectedUser(null);
+      alert(`Chat access for ${userToRevoke.displayName} has been revoked.`);
+    } catch (error: any) {
+      alert(`Failed to revoke access: ${error.message}`);
+    } finally {
+      setRevokeModal({ open: false, userToRevoke: null });
+    }
+  };
+
+  const handleSendChatRequest = async (userId: string) => {
+    try {
+      await sendChatRequest(userId);
+      alert("Chat request sent successfully!");
+    } catch (error: any) {
+      alert(`Failed to send chat request: ${error.message}`);
+    }
+  };
+  
+  const handleSendMessage = useCallback(async () => {
+    if ((!newMessage.trim() && !fileInput) || !auth.currentUser) return;
     setIsUploading(true);
     try {
-      await sendMessage(
-        newMessage.trim(),
-        auth.currentUser.displayName,
-        selectedUser ?? null,
-        fileInput || undefined
-      );
+      await sendMessage(newMessage, auth.currentUser.displayName || "User", selectedUser || null, fileInput || undefined);
       setNewMessage("");
       setFileInput(null);
     } catch (error) {
-      console.error("Failed to send message:", error);
       alert("Failed to send message. Please try again.");
     } finally {
       setIsUploading(false);
     }
-  }, [newMessage, fileInput, selectedUser, isOffline]);
+  }, [newMessage, fileInput, selectedUser]);
 
-  const handleEditMessage = useCallback(
-    async (messageId: string) => {
-      if (!editingText.trim()) return;
-      if (isOffline) {
-        alert("You are offline. Please reconnect to edit messages.");
-        return;
-      }
-      await editMessage(messageId, editingText);
-      setEditingId(null);
-      setEditingText("");
-    },
-    [editingText, isOffline]
-  );
+  const handleEditMessage = useCallback(async (messageId: string) => {
+    await editMessage(messageId, editingText);
+    setEditingId(null);
+    setEditingText("");
+  }, [editingText]);
 
   const handleDeleteMessage = useCallback(async () => {
     if (!deleteModal.messageId) return;
-    if (isOffline) {
-      alert("You are offline. Please reconnect to delete messages.");
-      return;
-    }
-    try {
-      await deleteMessage(deleteModal.messageId);
-      setDeleteModal({ open: false, messageId: null });
-    } catch (error) {
-      console.error("Failed to delete message:", error);
-    }
-  }, [deleteModal.messageId, isOffline]);
+    await deleteMessage(deleteModal.messageId);
+    setDeleteModal({ open: false, messageId: null });
+  }, [deleteModal.messageId]);
 
   return (
     <>
-      <div
-        className={`flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden ${
-          previewImage ? "bg-black blur-md" : ""
-        }`}
-      >
+      <div className={`flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden ${previewImage ? "blur-sm" : ""}`}>
         <Sidebar
-          users={users}
+          users={sortedUsers}
           usersLoading={usersLoading}
           selectedUser={selectedUser}
           setSelectedUser={setSelectedUser}
@@ -261,101 +264,50 @@ const Chat = () => {
           userSearch={userSearch}
           setUserSearch={setUserSearch}
           handleSignOut={() => signOutUser(navigate)}
+          chatRequests={chatRequests}
+          onSendChatRequest={handleSendChatRequest}
+          unreadMessages={unreadMessages}
         />
-
-        <div
-          className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${
-            isSidebarOpen ? "block" : "hidden"
-          }`}
-          onClick={() => setIsSidebarOpen(false)}
-        />
-
+        <div className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${isSidebarOpen ? "block" : "hidden"}`} onClick={() => setIsSidebarOpen(false)} />
         <div className="flex-1 flex flex-col min-h-0">
           <ChatHeader
             selectedUser={selectedUser}
             setIsSidebarOpen={setIsSidebarOpen}
             setPreviewImage={setPreviewImage}
+            onRevokeClick={() => setRevokeModal({ open: true, userToRevoke: selectedUser || null })}
+            onMuteClick={() => toggleMuteChat(selectedUser ? selectedUser.id : 'global')}
+            isMuted={mutedChats.includes(selectedUser ? selectedUser.id : 'global')}
           />
-
-          <div
-            className="flex-1 p-2 sm:p-4 overflow-y-auto"
-            style={{
-              backgroundImage: `url(${chatPattern})`,
-              backgroundSize: "300px",
-              backgroundPosition: "center",
-              backgroundRepeat: "repeat",
-            }}
-          >
+          <div className="flex-1 p-2 sm:p-4 overflow-y-auto" style={{ backgroundImage: `url(${chatPattern})`, backgroundSize: "300px", backgroundRepeat: "repeat" }}>
             <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3">
               {usersLoading || selectedUser === undefined ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="flex flex-col justify-center items-center rounded-lg px-6 py-8 text-center text-base bg-[#743fc9]/80 text-[whitesmoke]">
-                    <svg
-                      className="animate-spin h-6 w-6 text-white mb-2"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                      ></path>
-                    </svg>
-                    <span>Loading chat...</span>
-                  </div>
-                </div>
-              ) : selectedUser && messages.length === 0 ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="flex flex-col justify-center items-center rounded-lg px-6 py-8 text-center text-base bg-[#743fc9]/80 text-[whitesmoke]">
-                    <span className="font-semibold">
-                      Start a conversation with{" "}
-                      <span className="font-bold">
-                        {selectedUser.displayName}
-                      </span>
-                    </span>
-                    <FiMessageSquare />
+                <div className="flex-1 flex items-center justify-center text-white">Loading chat...</div>
+              ) : messages.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center bg-[#743fc9]/80 text-white p-4 rounded-lg">
+                    <FiMessageSquare className="mx-auto text-4xl mb-2" />
+                    No messages yet. Say hello!
                   </div>
                 </div>
               ) : (
-                <>
-                  {isOffline && messages.length > 0 && (
-                    <div className="text-center text-sm text-white/80 bg-[#743fc9]/50 p-2 rounded-lg mb-2">
-                      Viewing cached messages. Reconnect to send or receive new
-                      messages.
-                    </div>
-                  )}
-                  {messages.map((msg) => (
-                    <Message
-                      key={msg.id}
-                      message={msg}
-                      isCurrentUser={
-                        msg.from === auth.currentUser?.uid ||
-                        (msg.user === auth.currentUser?.displayName &&
-                          !msg.from)
-                      }
-                      editingId={editingId}
-                      editingText={editingText}
-                      setEditingId={setEditingId}
-                      setEditingText={setEditingText}
-                      handleEditMessage={handleEditMessage}
-                      setDeleteModal={setDeleteModal}
-                      setPreviewImage={setPreviewImage}
-                    />
-                  ))}
-                </>
+                messages.map((msg) => (
+                  <Message
+                    key={msg.id}
+                    message={msg}
+                    isCurrentUser={msg.from === auth.currentUser?.uid}
+                    showUserName={!selectedUser} // Show username only in global chat
+                    setEditingId={setEditingId}
+                    setEditingText={setEditingText}
+                    editingId={editingId}
+                    editingText={editingText}
+                    handleEditMessage={handleEditMessage}
+                    setDeleteModal={setDeleteModal}
+                    setPreviewImage={setPreviewImage}
+                  />
+                ))
               )}
             </div>
           </div>
-
           <MessageInput
             newMessage={newMessage}
             setNewMessage={setNewMessage}
@@ -365,21 +317,17 @@ const Chat = () => {
             isUploading={isUploading}
           />
         </div>
-
-        {/* {isOffline && (
-          <div className="fixed flex flex-col justify-center items-center bottom-[50%] left-[50%] bg-gray-400 text-black px-4 py-2 text-center text-sm w-[50%] mx-auto">
-            You are offline. Messages will load when you reconnect.
-            <FiWifiOff className="w-5 h-5 text-black/80 mt-2" />
-          </div>
-        )} */}
       </div>
-
-      <ImageModal
-        open={!!previewImage}
-        imageUrl={previewImage ?? ""}
-        onClose={() => setPreviewImage(null)}
+      <ImageModal open={!!previewImage} imageUrl={previewImage || ""} onClose={() => setPreviewImage(null)} />
+      <ConfirmModal
+        open={revokeModal.open}
+        title="Revoke Chat Access?"
+        description={`Are you sure you want to revoke chat access for ${revokeModal.userToRevoke?.displayName}?`}
+        onCancel={() => setRevokeModal({ open: false, userToRevoke: null })}
+        onConfirm={handleRevokeAccess}
+        confirmText="Revoke"
+        cancelText="Cancel"
       />
-
       <ConfirmModal
         open={deleteModal.open}
         title="Delete Message?"
@@ -389,6 +337,12 @@ const Chat = () => {
         confirmText="Delete"
         cancelText="Cancel"
       />
+      {showChatRequests && (
+        <ChatRequestModal
+          requests={chatRequests.filter(r => r.toUserId === auth.currentUser?.uid)}
+          onClose={() => setShowChatRequests(false)}
+        />
+      )}
     </>
   );
 };
