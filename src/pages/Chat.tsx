@@ -16,7 +16,7 @@ import {
   revokeChatAccess,
   listenForMessages,
   getMutedChats, // For mute persistence
-  setMutedChats, // For mute persistence
+  // setMutedChats, // For mute persistence
 } from "../components/chatUtils";
 import type {
   User,
@@ -79,9 +79,9 @@ const Chat = () => {
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [showChatRequests, setShowChatRequests] = useState(false);
   const navigate = useNavigate();
-  const prevRequestsRef = useRef<ChatRequest[]>();
+  const prevRequestsRef = useRef<ChatRequest[]>([]);
   const chimeRef = useRef<HTMLAudioElement | null>(null);
-  const selectedUserRef = useRef<User | null | undefined>();
+  const selectedUserRef = useRef<User | null | undefined>(null);
   const componentMountTimeRef = useRef<number | null>(null);
 
   useEffect(() => {

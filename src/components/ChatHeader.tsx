@@ -1,6 +1,6 @@
 // src/components/ChatHeader.tsx
 
-import React, { useState } from "react";
+import React from "react";
 import { FiMenu, FiGlobe, FiBellOff, FiVolume2, FiUserX } from "react-icons/fi";
 import { getLastActiveText } from "../components/chatUtils";
 import type { User } from "../components/chatUtils";
@@ -22,7 +22,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onMuteClick,
   isMuted,
 }) => {
-  const [showOptions, setShowOptions] = useState(false);
 
   return (
     <div className="flex items-center justify-between px-4 p-3 md:p-4 bg-gray-700/85 backdrop-blur-md text-white shadow border-b border-white/10" style={{ boxSizing: "border-box" }}>

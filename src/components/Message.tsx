@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash, faPen, faClock, faCheckDouble } from "@fortawesome/free-solid-svg-icons";
 import type { Message as MessageType } from "./chatUtils";
 import { formatTime } from "./chatUtils";
-import { auth } from "../firebase";
+// import { auth } from "../firebase";
 
 interface MessageProps {
   message: MessageType;

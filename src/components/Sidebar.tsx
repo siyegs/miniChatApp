@@ -5,7 +5,7 @@ import { FiSettings, FiUser } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import type { User, ChatRequest } from "../components/chatUtils";
 import { auth } from "../firebase";
-import { signOutUser, canUsersChat } from "./chatUtils";
+import { canUsersChat } from "./chatUtils";
 import { FaDoorOpen } from "react-icons/fa";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUserPlus, faClock, faTimes } from "@fortawesome/free-solid-svg-icons";
