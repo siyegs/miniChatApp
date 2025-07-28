@@ -44,7 +44,7 @@ const Message: React.FC<MessageProps> = ({
         }`}
       >
         {isCurrentUser && editingId !== message.id && (
-          <div className="absolute right-0 bottom-[-20px] opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+          <div className="absolute right-0 bottom-[-10px] opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
             {isEditable && (
               <button onClick={() => { setEditingId(message.id); setEditingText(message.text); }} className="bg-gray-500/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-gray-500/80">
                 <FontAwesomeIcon icon={faPen} className="w-2.5 h-2.5" />
@@ -89,7 +89,7 @@ const Message: React.FC<MessageProps> = ({
             )}
           </div>
         )}
-        <div className={`text-[10px] text-right mt-1 flex items-center justify-end gap-1 ${isCurrentUser ? "text-gray-300" : "text-gray-500"}`}>
+        <div className={`text-[10px] text-right mt-1 flex items-center justify-end gap-2 ${isCurrentUser ? "text-gray-300" : "text-gray-500"}`}>
           {formatTime(message.timestamp)}
           {isCurrentUser && (
             <FontAwesomeIcon icon={message.status === 'sending' ? faClock : faCheckDouble} className={message.status === 'sent' ? 'text-gray-400' : 'text-blue-400'} />
