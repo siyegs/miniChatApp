@@ -5,7 +5,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash, faPen, faClock, faCheckDouble } from "@fortawesome/free-solid-svg-icons";
 import type { Message as MessageType } from "./chatUtils";
 import { formatTime } from "./chatUtils";
-// import { auth } from "../firebase";
 
 interface MessageProps {
   message: MessageType;
@@ -57,7 +56,6 @@ const Message: React.FC<MessageProps> = ({
           </div>
         )}
         
-        {/* Show username in global chat for other users */}
         {showUserName && !isCurrentUser && (
           <div className="text-sm font-bold text-purple-700 mb-1">
             {message.user}
@@ -77,7 +75,6 @@ const Message: React.FC<MessageProps> = ({
             {isImage ? (
               <div className="relative">
                 <img src={message.text} alt="Uploaded" className="max-w-[200px] max-h-[200px] rounded-lg cursor-pointer" onClick={() => setPreviewImage(message.text)} />
-                {/* Fix: Only show loader when message is still sending */}
                 {message.status === 'sending' && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
                     <svg className="animate-spin h-6 w-6 text-white" viewBox="0 0 24 24">

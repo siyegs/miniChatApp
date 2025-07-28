@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { auth, db } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import { FiMessageSquare,} from "react-icons/fi";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { FiMessageSquare } from "react-icons/fi";
+import { collection, query, where, onSnapshot, orderBy, limit } from "firebase/firestore";
 import {
   listenForUsers,
   sendMessage,
@@ -14,9 +14,11 @@ import {
   listenForAllChatRequests,
   sendChatRequest,
   revokeChatAccess,
+  grantChatAccess,
   listenForMessages,
-  getMutedChats, // For mute persistence
-  // setMutedChats, // For mute persistence
+  getMutedChats,
+  // setMutedChats,
+  canUsersChat,
 } from "../components/chatUtils";
 import type {
   User,
@@ -32,12 +34,12 @@ import Message from "../components/Message";
 import ChatRequestModal from "../components/ChatRequestModal";
 import chatPattern from "/chat-bg3-copy.jpg";
 
-// This custom hook is working correctly for persistence. No changes needed.
 function usePersistentSelectedChat(
   users: User[],
   usersLoading: boolean
 ): [User | null | undefined, (user: User | null) => void] {
   const [selectedUser, setSelectedUserState] = useState<User | null | undefined>(undefined);
+  
   useEffect(() => {
     if (usersLoading) return;
     const chatId = localStorage.getItem("selectedChat");
@@ -49,13 +51,13 @@ function usePersistentSelectedChat(
       }
     }
     setSelectedUserState(null);
-    localStorage.setItem("selectedChat", "global");
   }, [users, usersLoading]);
 
   const setSelectedUser = (userOrNull: User | null) => {
     setSelectedUserState(userOrNull);
     localStorage.setItem("selectedChat", userOrNull ? userOrNull.id : "global");
   };
+
   return [selectedUser, setSelectedUser];
 }
 
@@ -71,15 +73,18 @@ const Chat = () => {
   const [deleteModal, setDeleteModal] = useState({ open: false, messageId: null as string | null });
   const [revokeModal, setRevokeModal] = useState({ open: false, userToRevoke: null as User | null });
   const [unreadMessages, setUnreadMessages] = useState<{ [userId: string]: boolean }>({});
-  const [mutedChats, setMutedChats] = useState<string[]>([]); // Mute state
+  const [mutedChats, setMutedChats] = useState<string[]>([]);
+  const [latestMessages, setLatestMessages] = useState<{ [key: string]: MessageType }>({});
+  const [isChatActive, setIsChatActive] = useState(true);
   const [userSearch, setUserSearch] = useState("");
   const [fileInput, setFileInput] = useState<File | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [showChatRequests, setShowChatRequests] = useState(false);
+  
   const navigate = useNavigate();
-  const prevRequestsRef = useRef<ChatRequest[]>([]);
+  // const prevRequestsRef = useRef<ChatRequest[]>();
   const chimeRef = useRef<HTMLAudioElement | null>(null);
   const selectedUserRef = useRef<User | null | undefined>(null);
   const componentMountTimeRef = useRef<number | null>(null);
@@ -88,11 +93,20 @@ const Chat = () => {
     chimeRef.current = new Audio('/chime.mp3');
     chimeRef.current.volume = 0.5;
     componentMountTimeRef.current = Date.now();
-    setMutedChats(getMutedChats()); // Load muted chats from localStorage on mount
+    setMutedChats(getMutedChats());
   }, []);
   
   useEffect(() => {
       selectedUserRef.current = selectedUser;
+      const checkStatus = async () => {
+          if (selectedUser && auth.currentUser) {
+              const canChat = await canUsersChat(auth.currentUser.uid, selectedUser.id);
+              setIsChatActive(canChat);
+          } else {
+              setIsChatActive(true);
+          }
+      };
+      checkStatus();
   }, [selectedUser]);
 
   const setSelectedUser = (userOrNull: User | null) => {
@@ -107,14 +121,9 @@ const Chat = () => {
 
   const toggleMuteChat = (chatId: string) => {
     const isMuted = mutedChats.includes(chatId);
-    let updatedMuted;
-    if (isMuted) {
-      updatedMuted = mutedChats.filter(id => id !== chatId);
-    } else {
-      updatedMuted = [...mutedChats, chatId];
-    }
+    const updatedMuted = isMuted ? mutedChats.filter(id => id !== chatId) : [...mutedChats, chatId];
     setMutedChats(updatedMuted);
-    setMutedChats(updatedMuted); // Persist to localStorage
+    setMutedChats(updatedMuted);
   };
   
   useEffect(() => {
@@ -126,90 +135,120 @@ const Chat = () => {
     return unsubscribe;
   }, []);
   
-  // Listener for displaying messages
   useEffect(() => {
     if (selectedUser === undefined) return;
     const unsubscribe = listenForMessages(selectedUser, setMessages);
     return unsubscribe;
   }, [selectedUser]);
 
-  // Listener for ALL notifications
   useEffect(() => {
     if (!auth.currentUser) return () => {};
-    const q = query(
-      collection(db, "messages"),
-      where("from", "!=", auth.currentUser.uid)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        const message = { id: change.doc.id, ...change.doc.data() } as MessageType;
-        if (change.type === "added" && message.timestamp > (componentMountTimeRef.current || 0)) {
-          const chatId = message.isPrivate ? message.from! : 'global';
-          const currentChatId = selectedUserRef.current ? selectedUserRef.current.id : 'global';
-          
-          // If the message is not for the currently open chat
-          if (chatId !== currentChatId) {
-            setUnreadMessages(prev => ({ ...prev, [chatId]: true }));
-            // Only play chime if the chat is not muted
-            if (!mutedChats.includes(chatId)) {
-              chimeRef.current?.play().catch(e => console.error("Chime play error:", e));
-            }
+    const privateQuery = query(collection(db, "messages"), where("to", "==", auth.currentUser.uid));
+    const unsubPrivate = onSnapshot(privateQuery, (snapshot) => handleNotifications(snapshot, 'private'));
+    const globalQuery = query(collection(db, "messages"), where("isPrivate", "==", false));
+    const unsubGlobal = onSnapshot(globalQuery, (snapshot) => handleNotifications(snapshot, 'global'));
+    return () => {
+        unsubPrivate();
+        unsubGlobal();
+    };
+  }, [mutedChats]);
+
+  const handleNotifications = (snapshot: any, type: 'private' | 'global') => {
+    snapshot.docChanges().forEach((change: any) => {
+      const message = { id: change.doc.id, ...change.doc.data() } as MessageType;
+      if (change.type === "added" && message.timestamp > (componentMountTimeRef.current || 0) && message.from !== auth.currentUser?.uid) {
+        const chatId = type === 'private' ? message.from! : 'global';
+        const currentChatId = selectedUserRef.current ? selectedUserRef.current.id : 'global';
+        if (chatId !== currentChatId) {
+          setUnreadMessages(prev => ({ ...prev, [chatId]: true }));
+          if (!mutedChats.includes(chatId)) {
+            chimeRef.current?.play().catch(e => console.error("Chime play error:", e));
           }
         }
-      });
+      }
     });
-    return unsubscribe;
-  }, [mutedChats]); // Re-subscribe if mutedChats changes
+  };
 
+  useEffect(() => {
+    if (!auth.currentUser) return () => {};
+    const privateQuery = query(collection(db, "messages"), where("participants", "array-contains", auth.currentUser.uid));
+    const unsubPrivate = onSnapshot(privateQuery, (snapshot) => {
+        const latestMsgs: { [key: string]: MessageType } = {};
+        snapshot.docs.forEach(doc => {
+            const msg = { id: doc.id, ...doc.data() } as MessageType;
+            const otherUserId = msg.participants?.find(p => p !== auth.currentUser?.uid);
+            if (otherUserId) {
+                if (!latestMsgs[otherUserId] || msg.timestamp > latestMsgs[otherUserId].timestamp) {
+                    latestMsgs[otherUserId] = msg;
+                }
+            }
+        });
+        setLatestMessages(prev => ({ ...prev, ...latestMsgs }));
+    });
+    const globalQuery = query(collection(db, "messages"), where("isPrivate", "==", false), orderBy("timestamp", "desc"), limit(1));
+    const unsubGlobal = onSnapshot(globalQuery, (snapshot) => {
+        if (!snapshot.empty) {
+            const latestGlobal = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as MessageType;
+            setLatestMessages(prev => ({ ...prev, global: latestGlobal }));
+        }
+    });
+    return () => {
+        unsubPrivate();
+        unsubGlobal();
+    };
+  }, []);
+  
   useEffect(() => {
     if (!auth.currentUser) return;
     const unsubscribe = listenForAllChatRequests((requests) => {
       setChatRequests(requests);
+      if (selectedUser) {
+          const currentRequest = requests.find(r => r.participants.includes(selectedUser.id));
+          setIsChatActive(currentRequest?.status === 'accepted');
+      }
       if (requests.some(req => req.toUserId === auth.currentUser?.uid && req.status === 'pending')) {
         setShowChatRequests(true);
       }
     });
     return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    if (!auth.currentUser) return;
-    const prevRequests = prevRequestsRef.current;
-    if (prevRequests) {
-      chatRequests.forEach(newRequest => {
-        const prevRequest = prevRequests.find(pr => pr.id === newRequest.id);
-        if (prevRequest && newRequest.fromUserId === auth.currentUser?.uid && prevRequest.status === 'pending') {
-          const recipient = users.find(u => u.id === newRequest.toUserId);
-          const recipientName = recipient ? recipient.displayName : 'A user';
-          if (newRequest.status === 'accepted') alert(`Your chat request with ${recipientName} was accepted!`);
-          else if (newRequest.status === 'rejected') alert(`Your chat request with ${recipientName} was rejected.`);
-        }
-      });
-    }
-    prevRequestsRef.current = chatRequests;
-  }, [chatRequests, users]);
+  }, [selectedUser]);
 
   const sortedUsers = useMemo(() => {
     return [...users].sort((a, b) => {
-      const aHasUnread = unreadMessages[a.id];
-      const bHasUnread = unreadMessages[b.id];
-      if (aHasUnread && !bHasUnread) return -1;
-      if (!aHasUnread && bHasUnread) return 1;
+      const aMsg = latestMessages[a.id];
+      const bMsg = latestMessages[b.id];
+      if (aMsg && !bMsg) return -1;
+      if (!aMsg && bMsg) return 1;
+      if (aMsg && bMsg) {
+          return bMsg.timestamp - aMsg.timestamp;
+      }
       return a.displayName.localeCompare(b.displayName);
     });
-  }, [users, unreadMessages]);
+  }, [users, latestMessages]);
 
   const handleRevokeAccess = async () => {
     const userToRevoke = revokeModal.userToRevoke;
     if (!userToRevoke || !auth.currentUser) return;
     try {
       await revokeChatAccess(auth.currentUser.uid, userToRevoke.id);
-      if (selectedUser?.id === userToRevoke.id) setSelectedUser(null);
+      setIsChatActive(false);
       alert(`Chat access for ${userToRevoke.displayName} has been revoked.`);
     } catch (error: any) {
       alert(`Failed to revoke access: ${error.message}`);
     } finally {
       setRevokeModal({ open: false, userToRevoke: null });
+    }
+  };
+
+  // ** NEW Handler **
+  const handleGrantAccess = async () => {
+    if (!selectedUser || !auth.currentUser) return;
+    try {
+        await grantChatAccess(auth.currentUser.uid, selectedUser.id);
+        setIsChatActive(true);
+        alert(`Chat access has been granted to ${selectedUser.displayName}.`);
+    } catch (error: any) {
+        alert(`Failed to grant access: ${error.message}`);
     }
   };
 
@@ -267,6 +306,7 @@ const Chat = () => {
           chatRequests={chatRequests}
           onSendChatRequest={handleSendChatRequest}
           unreadMessages={unreadMessages}
+          latestMessages={latestMessages}
         />
         <div className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${isSidebarOpen ? "block" : "hidden"}`} onClick={() => setIsSidebarOpen(false)} />
         <div className="flex-1 flex flex-col min-h-0">
@@ -275,6 +315,8 @@ const Chat = () => {
             setIsSidebarOpen={setIsSidebarOpen}
             setPreviewImage={setPreviewImage}
             onRevokeClick={() => setRevokeModal({ open: true, userToRevoke: selectedUser || null })}
+            onGrantClick={handleGrantAccess}
+            isChatActive={isChatActive}
             onMuteClick={() => toggleMuteChat(selectedUser ? selectedUser.id : 'global')}
             isMuted={mutedChats.includes(selectedUser ? selectedUser.id : 'global')}
           />
@@ -282,7 +324,7 @@ const Chat = () => {
             <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3">
               {usersLoading || selectedUser === undefined ? (
                 <div className="flex-1 flex items-center justify-center text-white">Loading chat...</div>
-              ) : messages.length === 0 ? (
+              ) : messages.length === 0 && isChatActive ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center bg-[#743fc9]/80 text-white p-4 rounded-lg">
                     <FiMessageSquare className="mx-auto text-4xl mb-2" />
@@ -295,7 +337,7 @@ const Chat = () => {
                     key={msg.id}
                     message={msg}
                     isCurrentUser={msg.from === auth.currentUser?.uid}
-                    showUserName={!selectedUser} // Show username only in global chat
+                    showUserName={!selectedUser}
                     setEditingId={setEditingId}
                     setEditingText={setEditingText}
                     editingId={editingId}
@@ -308,14 +350,22 @@ const Chat = () => {
               )}
             </div>
           </div>
-          <MessageInput
-            newMessage={newMessage}
-            setNewMessage={setNewMessage}
-            handleSendMessage={handleSendMessage}
-            fileInput={fileInput}
-            setFileInput={setFileInput}
-            isUploading={isUploading}
-          />
+          
+          {isChatActive ? (
+            <MessageInput
+              newMessage={newMessage}
+              setNewMessage={setNewMessage}
+              handleSendMessage={handleSendMessage}
+              fileInput={fileInput}
+              setFileInput={setFileInput}
+              isUploading={isUploading}
+            />
+          ) : (
+            <div className="p-4 bg-red-800/50 text-white text-center text-sm">
+              Chat access is currently revoked.
+            </div>
+          )}
+          
         </div>
       </div>
       <ImageModal open={!!previewImage} imageUrl={previewImage || ""} onClose={() => setPreviewImage(null)} />

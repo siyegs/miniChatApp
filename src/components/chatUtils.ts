@@ -13,6 +13,8 @@ import {
   setDoc,
   getDocs,
   writeBatch,
+  orderBy,
+  limit,
 } from "firebase/firestore";
 import { signOut, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail, updatePassword, getAuth } from "firebase/auth";
 import axios from "axios";
@@ -97,6 +99,7 @@ export const listenForUsers = (callback: (users: User[]) => void) => {
 
 export const signOutUser = async (navigate: (path: string) => void) => {
   await signOut(auth);
+  localStorage.removeItem("selectedChat");
   navigate("/");
 };
 
@@ -157,10 +160,11 @@ export const deleteUserAccount = async () => {
 // --- CHAT REQUEST FUNCTIONS ---
 export const sendChatRequest = async (toUserId: string) => {
   if (!auth.currentUser) throw new Error("No authenticated user");
+  // **MODIFICATION**: This now prevents sending a new request if ANY kind of request exists.
   const q = query(collection(db, "chatRequests"), where("participants", "==", [auth.currentUser.uid, toUserId].sort()));
   const existing = await getDocs(q);
-  if (existing.docs.some(d => d.data().status === 'pending' || d.data().status === 'accepted')) {
-    throw new Error("A request already exists or is accepted.");
+  if (!existing.empty) {
+    throw new Error("A chat request history already exists with this user.");
   }
   await addDoc(collection(db, "chatRequests"), {
     fromUserId: auth.currentUser.uid,
@@ -187,11 +191,29 @@ export const revokeChatAccess = async (user1Id: string, user2Id: string) => {
     where("status", "==", "accepted")
   );
   const snapshot = await getDocs(q);
-  if (snapshot.empty) throw new Error("No accepted chat found.");
+  if (snapshot.empty) throw new Error("No accepted chat found to revoke.");
   const batch = writeBatch(db);
   snapshot.forEach(doc => batch.update(doc.ref, { status: "rejected" }));
   await batch.commit();
 };
+
+// ** NEW FUNCTION **
+export const grantChatAccess = async (user1Id: string, user2Id: string) => {
+  // Find the most recent rejected request to re-accept it.
+  const q = query(
+    collection(db, "chatRequests"),
+    where("participants", "==", [user1Id, user2Id].sort()),
+    where("status", "==", "rejected"),
+    orderBy("timestamp", "desc"),
+    limit(1)
+  );
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) throw new Error("No rejected chat found to grant access to.");
+  
+  const requestToGrant = snapshot.docs[0];
+  await updateDoc(requestToGrant.ref, { status: "accepted" });
+};
+
 
 export const canUsersChat = async (user1Id: string, user2Id: string): Promise<boolean> => {
   const q = query(
@@ -307,7 +329,6 @@ export const uploadToImgBB = async (file: File, apiKey: string): Promise<string>
   }
 };
 
-// ** NEW: Mute state management **
 export const getMutedChats = (): string[] => {
     const muted = localStorage.getItem("mutedChats");
     return muted ? JSON.parse(muted) : [];
