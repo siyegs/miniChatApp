@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import type { User, ChatRequest, Message } from "../components/chatUtils";
 import { auth } from "../firebase";
 import { canUsersChat } from "./chatUtils";
-import { FaDoorOpen } from "react-icons/fa";
+import { FaDoorOpen, FaImage } from "react-icons/fa";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUserPlus, faClock } from "@fortawesome/free-solid-svg-icons";
 
@@ -113,7 +113,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               <img
                 src={photoURL}
                 alt="Profile"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover cursor-pointer"
                 onClick={() => setPreviewImage(photoURL)}
               />
             ) : (
@@ -163,12 +163,12 @@ const Sidebar: React.FC<SidebarProps> = ({
         <ul>
           <li
             key="global"
-            onClick={() => setSelectedUser(null)}
+            onClick={() => {setSelectedUser(null); setIsSidebarOpen(false);}}
             className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors rounded-lg mx-2 mb-1 ${
               !selectedUser ? "bg-white/20" : "hover:bg-white/10 text-white/80"
             }`}
           >
-            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold flex-shrink-0 relative">
+            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold flex-shrink-0">
               {unreadMessages["global"] && (
                 <div className="absolute top-0 right-0 w-3 h-3 bg-purple-500 rounded-full border-2 border-[#5a3f87]" />
               )}
@@ -178,9 +178,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               <span className="font-semibold">Global Chat</span>
               {latestMessages["global"] && (
                 <p className="text-xs text-white/60 truncate">
-                  {latestMessages["global"].text.startsWith("http")
-                    ? "Image"
-                    : latestMessages["global"].text}
+                  {latestMessages["global"].text.startsWith("http") ? (
+                    <FaImage className="w-4 h-4" />
+                  ) : (
+                    latestMessages["global"].text
+                  )}
                 </p>
               )}
             </div>
@@ -238,9 +240,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                       </span>
                       {latestMessage && (
                         <p className="text-xs text-white/60 truncate">
-                          {latestMessage.text.startsWith("http")
-                            ? "Image"
-                            : latestMessage.text}
+                          {latestMessage.text.startsWith("http") ? (
+                            <FaImage className="w-3.5 h-3.5" />
+                          ) : (
+                            latestMessage.text
+                          )}
                         </p>
                       )}
                     </div>

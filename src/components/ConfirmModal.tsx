@@ -8,6 +8,7 @@ interface ConfirmModalProps {
   onCancel: () => void;
   confirmText?: string;
   cancelText?: string;
+  hideCancel?: boolean;
 }
 
 const ConfirmModal: React.FC<ConfirmModalProps> = ({
@@ -18,6 +19,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
   onCancel,
   confirmText = "Confirm",
   cancelText = "Cancel",
+  hideCancel = false,
 }) => {
   if (!open) return null;
   return (
@@ -37,15 +39,23 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
         </div>
         <div className="text-neutral-600 mb-6 text-center">{description}</div>
         <div className="flex gap-3 w-full">
+          {!hideCancel && (
+            <button
+              className="flex-1 py-2 rounded bg-neutral-200 text-neutral-800 hover:bg-neutral-300 transition"
+              onClick={onCancel}
+              onMouseOver={(e) => {
+                e.currentTarget.style.border = "none";
+              }}
+            >
+              {cancelText}
+            </button>
+          )}
           <button
-            className="flex-1 py-2 rounded bg-neutral-200 text-neutral-800 hover:bg-neutral-300 transition"
-            onClick={onCancel}
-          >
-            {cancelText}
-          </button>
-          <button
-            className="flex-1 py-2 rounded bg-gray-800 text-white hover:bg-red-700 transition"
+            className={`py-2 rounded bg-gray-800 text-white hover:bg-red-700 transition ${hideCancel ? 'w-full' : 'flex-1'}`}
             onClick={onConfirm}
+            onMouseOver={(e) => {
+              e.currentTarget.style.border = "none";
+            }}
           >
             {confirmText}
           </button>

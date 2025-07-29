@@ -79,7 +79,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               )}
             </div>
             <div>
-              <h1 className="font-bold truncate block text-[clamp(1rem,2vw,1.9rem)] w-[166px]">
+              <h1 className="font-bold truncate block text-[clamp(1rem,2vw,1.9rem)] w-[166px] lg:w-full">
                 {selectedUser.displayName}
               </h1>
               <p className="text-xs text-gray-300">

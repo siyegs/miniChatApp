@@ -39,7 +39,7 @@ const Message: React.FC<MessageProps> = ({
       <div
         className={`group relative max-w-[80%] md:max-w-[70%] rounded-2xl px-4 py-2 shadow-lg transition-all ${
           isCurrentUser
-            ? "bg-[#743fc9] text-white rounded-br-none"
+            ? "bg-[#523e73] text-white rounded-br-none"
             : "bg-white/95 text-neutral-900 rounded-bl-none"
         }`}
       >

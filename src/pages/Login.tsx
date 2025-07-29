@@ -366,15 +366,15 @@ const Login: React.FC = () => {
           <p>
             By signing in, you agree to our <br className="md:hidden" />
             <a
-              href="#"
               className="text-neutral-300 hover:underline font-bold hover:text-neutral-800"
+              onClick={()=> navigate("/terms")}
             >
               Terms
             </a>{" "}
             and{" "}
             <a
-              href="#"
               className="text-neutral-300 hover:underline font-bold hover:text-neutral-800"
+              onClick={()=> navigate("/privacy")}
             >
               Privacy Policy
             </a>
