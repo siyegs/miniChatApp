@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 const PrivacyPolicy = () => {
   const navigate = useNavigate();
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-800 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto bg-[#743fc9] rounded-[10px] shadow-2xl p-6 sm:p-8 relative">
+    <>
+      <div className="max-w-[95%] lg:max-w-[60%] my-7 mx-auto bg-[#743fc9] rounded-[10px] shadow-2xl p-6 sm:p-8">
         <button 
           onClick={() => navigate('/')}
-          className=" text-white hover:text-neutral-300 transition-colors"
+          onMouseOver={(e)=> {e.currentTarget.style.border = "none"}}
+          className=" text-white text-sm hover:text-neutral-300 transition-colors bg-inherit mb-6"
         >
-          ← Back to Login
+          ← <span className="hidden md:inline">Back to</span> Login
         </button>
         <h1 className="text-2xl sm:text-3xl font-bold text-white mb-6 text-center">
           Privacy Policy
@@ -20,8 +21,8 @@ const PrivacyPolicy = () => {
             Your privacy is critically important to us. This policy explains what information we collect and why.
           </p>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               1. Information We Collect
             </h2>
             <p className="text-white mb-4">
@@ -58,8 +59,8 @@ const PrivacyPolicy = () => {
             </div>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               2. How We Use Your Information
             </h2>
             <div className="space-y-2">
@@ -77,8 +78,8 @@ const PrivacyPolicy = () => {
             </div>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               3. How Your Information is Shared
             </h2>
             <ul className="list-disc pl-6 text-white/90">
@@ -102,8 +103,8 @@ const PrivacyPolicy = () => {
             </p>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               4. Your Rights and Choices
             </h2>
             <ul className="list-disc pl-6 text-white/90">
@@ -124,8 +125,8 @@ const PrivacyPolicy = () => {
             </ul>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               5. Data Storage and Security
             </h2>
             <p className="text-white">
@@ -133,8 +134,8 @@ const PrivacyPolicy = () => {
             </p>
           </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               6. Children's Privacy
             </h2>
             <p className="text-white">
@@ -143,7 +144,7 @@ const PrivacyPolicy = () => {
           </section>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

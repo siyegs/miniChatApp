@@ -3,21 +3,22 @@ import { useNavigate } from "react-router-dom";
 const TermsOfService = () => {
   const navigate = useNavigate();
   return (
-    <div className="min-h-screen bg-gradient-to-br from-neutral-900 to-neutral-800 py-2.5 sm:p-6 lg:p-8">
-      <div className="max-w-4xl mx-auto bg-[#743fc9] rounded-[10px] shadow-2xl p-6 sm:p-8 relative">
+    <>
+      <div className="max-w-[95%] lg:max-w-[70%] my-7 mx-auto bg-[#743fc9] rounded-[10px] shadow-2xl p-6 sm:p-8">
         <button 
-          onClick={() => navigate('/')}
-          className="text-white hover:text-neutral-300 transition-colors"
+          onClick={(e) => {e.currentTarget.style.outline = "none"; navigate('/')}}
+          onMouseOver={(e)=> {e.currentTarget.style.border = "none"}}
+          className="text-white text-sm hover:text-neutral-300 transition-colors bg-inherit mb-6"
         >
-          ← Back to Login
-        </button>ddsds
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-6 text-center">
+          ← <span className="hidden md:inline">Back to</span> Login
+        </button>
+        <h1 className="text-[clamp(21px,3vw,23px)] font-bold text-white mb-6 text-center">
           Terms of Service
         </h1>
 
         <div className="prose prose-invert max-w-none">
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               1. Your Account
             </h2>
             <p className="text-white mb-4">
@@ -33,8 +34,8 @@ const TermsOfService = () => {
             </p>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               2. User Conduct
             </h2>
             <p className="text-white mb-4">
@@ -52,8 +53,8 @@ const TermsOfService = () => {
             </p>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               3. Chat Functionality
             </h2>
             <ul className="list-disc pl-6 text-white/90">
@@ -69,8 +70,8 @@ const TermsOfService = () => {
             </ul>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               4. Content You Post
             </h2>
             <p className="text-white">
@@ -78,8 +79,8 @@ const TermsOfService = () => {
             </p>
           </section>
 
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="mb-8 text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               5. Third-Party Services: Image Uploads
             </h2>
             <p className="text-white mb-4">
@@ -90,8 +91,8 @@ const TermsOfService = () => {
             </p>
           </section>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-4 border-b border-white/20 pb-2">
+          <section className="text-sm">
+            <h2 className="text-lg font-semibold text-white mb-4 border-b border-white/20 pb-2">
               6. Termination
             </h2>
             <p className="text-white">
@@ -100,7 +101,7 @@ const TermsOfService = () => {
           </section>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

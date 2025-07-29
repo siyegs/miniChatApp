@@ -17,7 +17,7 @@ import {
   grantChatAccess,
   listenForMessages,
   getMutedChats,
-  // setMutedChats,
+  setMutedChats,
   canUsersChat,
 } from "../components/chatUtils";
 import type {
@@ -72,8 +72,6 @@ const Chat = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ open: false, messageId: null as string | null });
   const [revokeModal, setRevokeModal] = useState({ open: false, userToRevoke: null as User | null });
-  const [revokeSuccessModal, setRevokeSuccessModal] = useState({ open: false, userToRevoke: null as User | null });
-  const [grantSuccessModal, setGrantSuccessModal] = useState({ open: false, userToGrant: null as User | null });
   const [unreadMessages, setUnreadMessages] = useState<{ [userId: string]: boolean }>({});
   const [mutedChats, setMutedChats] = useState<string[]>([]);
   const [latestMessages, setLatestMessages] = useState<{ [key: string]: MessageType }>({});
@@ -86,9 +84,9 @@ const Chat = () => {
   const [showChatRequests, setShowChatRequests] = useState(false);
   
   const navigate = useNavigate();
-  // const prevRequestsRef = useRef<ChatRequest[]>();
+  const prevRequestsRef = useRef<ChatRequest[]>();
   const chimeRef = useRef<HTMLAudioElement | null>(null);
-  const selectedUserRef = useRef<User | null | undefined>(null);
+  const selectedUserRef = useRef<User | null | undefined>();
   const componentMountTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -234,7 +232,7 @@ const Chat = () => {
     try {
       await revokeChatAccess(auth.currentUser.uid, userToRevoke.id);
       setIsChatActive(false);
-      setRevokeSuccessModal({ open: true, userToRevoke });
+      alert(`Chat access for ${userToRevoke.displayName} has been revoked.`);
     } catch (error: any) {
       alert(`Failed to revoke access: ${error.message}`);
     } finally {
@@ -242,13 +240,12 @@ const Chat = () => {
     }
   };
 
-  // ** NEW Handler **
   const handleGrantAccess = async () => {
     if (!selectedUser || !auth.currentUser) return;
     try {
         await grantChatAccess(auth.currentUser.uid, selectedUser.id);
         setIsChatActive(true);
-        setGrantSuccessModal({ open: true, userToGrant: selectedUser });
+        alert(`Chat access has been granted to ${selectedUser.displayName}.`);
     } catch (error: any) {
         alert(`Failed to grant access: ${error.message}`);
     }
@@ -309,6 +306,7 @@ const Chat = () => {
           onSendChatRequest={handleSendChatRequest}
           unreadMessages={unreadMessages}
           latestMessages={latestMessages}
+          isChatActive={isChatActive} // <-- Pass down the active state
         />
         <div className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${isSidebarOpen ? "block" : "hidden"}`} onClick={() => setIsSidebarOpen(false)} />
         <div className="flex-1 flex flex-col min-h-0">
@@ -389,32 +387,12 @@ const Chat = () => {
         confirmText="Delete"
         cancelText="Cancel"
       />
-      
       {showChatRequests && (
         <ChatRequestModal
           requests={chatRequests.filter(r => r.toUserId === auth.currentUser?.uid)}
           onClose={() => setShowChatRequests(false)}
         />
       )}
-      
-      <ConfirmModal
-        open={revokeSuccessModal.open}
-        title="Access Revoked"
-        description={`Chat access for ${revokeSuccessModal.userToRevoke?.displayName} has been successfully revoked.`}
-        onCancel={() => setRevokeSuccessModal({ open: false, userToRevoke: null })}
-        onConfirm={() => setRevokeSuccessModal({ open: false, userToRevoke: null })}
-        confirmText="OK"
-        hideCancel={true}
-      />
-      <ConfirmModal
-        open={grantSuccessModal.open}
-        title="Access Granted"
-        description={`Chat access for ${grantSuccessModal.userToGrant?.displayName} has been successfully granted.`}
-        onCancel={() => setGrantSuccessModal({ open: false, userToGrant: null })}
-        onConfirm={() => setGrantSuccessModal({ open: false, userToGrant: null })}
-        confirmText="OK"
-        hideCancel={true}
-      />
     </>
   );
 };
