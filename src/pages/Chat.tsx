@@ -1,9 +1,8 @@
 // src/pages/Chat.tsx
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { auth, db } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import { FiMessageSquare } from "react-icons/fi";
 import { collection, query, where, onSnapshot, orderBy, limit } from "firebase/firestore";
 import {
   listenForUsers,
@@ -17,7 +16,7 @@ import {
   grantChatAccess,
   listenForMessages,
   getMutedChats,
-  setMutedChats,
+  //setMutedChats,
   canUsersChat,
 } from "../components/chatUtils";
 import type {
@@ -84,9 +83,8 @@ const Chat = () => {
   const [showChatRequests, setShowChatRequests] = useState(false);
   
   const navigate = useNavigate();
-  const prevRequestsRef = useRef<ChatRequest[]>();
   const chimeRef = useRef<HTMLAudioElement | null>(null);
-  const selectedUserRef = useRef<User | null | undefined>();
+  const selectedUserRef = useRef<User | null | undefined>(null);
   const componentMountTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -229,12 +227,20 @@ const Chat = () => {
   const handleRevokeAccess = async () => {
     const userToRevoke = revokeModal.userToRevoke;
     if (!userToRevoke || !auth.currentUser) return;
+    
+    setChatRequests(prev => prev.map(req => 
+      req.participants.includes(userToRevoke.id) ? { ...req, status: 'rejected', revokedBy: auth.currentUser?.uid } : req
+    ));
+    setIsChatActive(false);
+
     try {
       await revokeChatAccess(auth.currentUser.uid, userToRevoke.id);
-      setIsChatActive(false);
-      alert(`Chat access for ${userToRevoke.displayName} has been revoked.`);
     } catch (error: any) {
       alert(`Failed to revoke access: ${error.message}`);
+      setChatRequests(prev => prev.map(req => 
+        req.participants.includes(userToRevoke.id) ? { ...req, status: 'accepted', revokedBy: undefined } : req
+      ));
+      setIsChatActive(true);
     } finally {
       setRevokeModal({ open: false, userToRevoke: null });
     }
@@ -242,29 +248,46 @@ const Chat = () => {
 
   const handleGrantAccess = async () => {
     if (!selectedUser || !auth.currentUser) return;
+    
+    setChatRequests(prev => prev.map(req => 
+        req.participants.includes(selectedUser.id) ? { ...req, status: 'accepted', revokedBy: undefined } : req
+    ));
+    setIsChatActive(true);
+
     try {
         await grantChatAccess(auth.currentUser.uid, selectedUser.id);
-        setIsChatActive(true);
-        alert(`Chat access has been granted to ${selectedUser.displayName}.`);
+//        alert(`Chat access has been granted to ${selectedUser.displayName}.`);
     } catch (error: any) {
         alert(`Failed to grant access: ${error.message}`);
+        setChatRequests(prev => prev.map(req => 
+            req.participants.includes(selectedUser.id) ? { ...req, status: 'rejected', revokedBy: auth.currentUser?.uid } : req
+        ));
+        setIsChatActive(false);
     }
   };
 
   const handleSendChatRequest = async (userId: string) => {
     try {
       await sendChatRequest(userId);
-      alert("Chat request sent successfully!");
     } catch (error: any) {
       alert(`Failed to send chat request: ${error.message}`);
     }
   };
   
   const handleSendMessage = useCallback(async () => {
-    if ((!newMessage.trim() && !fileInput) || !auth.currentUser) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser || (!newMessage.trim() && !fileInput)) return;
+    if (selectedUser) {
+        const canChat = await canUsersChat(currentUser.uid, selectedUser.id);
+        if (!canChat) {
+            setIsChatActive(false);
+            alert("Cannot send message. Your chat access may have been revoked.");
+            return;
+        }
+    }
     setIsUploading(true);
     try {
-      await sendMessage(newMessage, auth.currentUser.displayName || "User", selectedUser || null, fileInput || undefined);
+      await sendMessage(newMessage, currentUser.displayName || "User", selectedUser || null, fileInput || undefined);
       setNewMessage("");
       setFileInput(null);
     } catch (error) {
@@ -286,6 +309,10 @@ const Chat = () => {
     setDeleteModal({ open: false, messageId: null });
   }, [deleteModal.messageId]);
 
+  // ** NEW: Derived state to pass to the header **
+  const currentRequest = selectedUser ? chatRequests.find(r => r.participants.includes(selectedUser.id)) : null;
+  const isRevokedByCurrentUser = currentRequest?.revokedBy === auth.currentUser?.uid;
+
   return (
     <>
       <div className={`flex h-screen w-screen bg-gradient-to-br from-neutral-900 to-neutral-800 font-sans overflow-x-hidden ${previewImage ? "blur-sm" : ""}`}>
@@ -306,7 +333,7 @@ const Chat = () => {
           onSendChatRequest={handleSendChatRequest}
           unreadMessages={unreadMessages}
           latestMessages={latestMessages}
-          isChatActive={isChatActive} // <-- Pass down the active state
+          isChatActive
         />
         <div className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${isSidebarOpen ? "block" : "hidden"}`} onClick={() => setIsSidebarOpen(false)} />
         <div className="flex-1 flex flex-col min-h-0">
@@ -315,39 +342,48 @@ const Chat = () => {
             setIsSidebarOpen={setIsSidebarOpen}
             setPreviewImage={setPreviewImage}
             onRevokeClick={() => setRevokeModal({ open: true, userToRevoke: selectedUser || null })}
-            onGrantClick={handleGrantAccess}
+            onGrantClick={ handleGrantAccess}
             isChatActive={isChatActive}
             onMuteClick={() => toggleMuteChat(selectedUser ? selectedUser.id : 'global')}
             isMuted={mutedChats.includes(selectedUser ? selectedUser.id : 'global')}
+            isRevokedByCurrentUser={isRevokedByCurrentUser}
           />
-          <div className="flex-1 p-2 sm:p-4 overflow-y-auto" style={{ backgroundImage: `url(${chatPattern})`, backgroundSize: "300px", backgroundRepeat: "repeat" }}>
-            <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3">
-              {usersLoading || selectedUser === undefined ? (
-                <div className="flex-1 flex items-center justify-center text-white">Loading chat...</div>
-              ) : messages.length === 0 && isChatActive ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center bg-[#743fc9]/80 text-white p-4 rounded-lg">
-                    <FiMessageSquare className="mx-auto text-4xl mb-2" />
-                    No messages yet. Say hello!
-                  </div>
-                </div>
-              ) : (
-                messages.map((msg) => (
-                  <Message
-                    key={msg.id}
-                    message={msg}
-                    isCurrentUser={msg.from === auth.currentUser?.uid}
-                    showUserName={!selectedUser}
-                    setEditingId={setEditingId}
-                    setEditingText={setEditingText}
-                    editingId={editingId}
-                    editingText={editingText}
-                    handleEditMessage={handleEditMessage}
-                    setDeleteModal={setDeleteModal}
-                    setPreviewImage={setPreviewImage}
-                  />
-                ))
-              )}
+          <div className="flex-1 p-2 sm:p-4 overflow-y-auto"  style={{ backgroundImage: `url(${chatPattern})`, backgroundSize: '1100px', backgroundPosition: 'center' }}>
+            <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3 pb-4">
+              {messages.map((msg, index) => {
+                const prevMsg = messages[index - 1];
+                const showDateSeparator = !prevMsg || new Date(msg.timestamp).toDateString() !== new Date(prevMsg.timestamp).toDateString();
+                const getSeparatorText = () => {
+                    const today = new Date();
+                    const msgDate = new Date(msg.timestamp);
+                    if (today.toDateString() === msgDate.toDateString()) return 'Today';
+                    const yesterday = new Date();
+                    yesterday.setDate(today.getDate() - 1);
+                    if (yesterday.toDateString() === msgDate.toDateString()) return 'Yesterday';
+                    return msgDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+                };
+                return (
+                  <React.Fragment key={msg.id}>
+                    {showDateSeparator && (
+                      <div className="w-fit mx-auto text-xs text-white/60 bg-gray-800/50 my-2 py-0.5 px-3 rounded-md">
+                        {getSeparatorText()}
+                      </div>
+                    )}
+                    <Message
+                      message={msg}
+                      isCurrentUser={msg.from === auth.currentUser?.uid}
+                      showUserName={!selectedUser}
+                      setEditingId={setEditingId}
+                      setEditingText={setEditingText}
+                      editingId={editingId}
+                      editingText={editingText}
+                      handleEditMessage={handleEditMessage}
+                      setDeleteModal={setDeleteModal}
+                      setPreviewImage={setPreviewImage}
+                    />
+                  </React.Fragment>
+                );
+              })}
             </div>
           </div>
           
@@ -374,7 +410,7 @@ const Chat = () => {
         title="Revoke Chat Access?"
         description={`Are you sure you want to revoke chat access for ${revokeModal.userToRevoke?.displayName}?`}
         onCancel={() => setRevokeModal({ open: false, userToRevoke: null })}
-        onConfirm={handleRevokeAccess}
+        onConfirm={() => { handleRevokeAccess(); setRevokeModal({ open: false, userToRevoke: null }); }}
         confirmText="Revoke"
         cancelText="Cancel"
       />

@@ -15,8 +15,19 @@ import {
   writeBatch,
   orderBy,
   limit,
+  deleteField,
 } from "firebase/firestore";
-import { signOut, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail, updatePassword, getAuth } from "firebase/auth";
+import { 
+    signOut, 
+    updateProfile, 
+    deleteUser, 
+    EmailAuthProvider, 
+    reauthenticateWithCredential, 
+    verifyBeforeUpdateEmail, 
+    updatePassword, 
+    getAuth,
+    sendPasswordResetEmail
+} from "firebase/auth";
 import axios from "axios";
 
 // --- INTERFACES ---
@@ -48,6 +59,7 @@ export interface ChatRequest {
   timestamp: number;
   status: "pending" | "accepted" | "rejected";
   participants: string[];
+  revokedBy?: string; // <-- ADD THIS OPTIONAL FIELD
 }
 
 // --- USER & AUTH FUNCTIONS ---
@@ -101,6 +113,10 @@ export const signOutUser = async (navigate: (path: string) => void) => {
   await signOut(auth);
   localStorage.removeItem("selectedChat");
   navigate("/");
+};
+
+export const sendPasswordReset = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
 };
 
 // --- ACCOUNT & PROFILE MANAGEMENT (FOR SETTINGS PAGE) ---
@@ -160,7 +176,6 @@ export const deleteUserAccount = async () => {
 // --- CHAT REQUEST FUNCTIONS ---
 export const sendChatRequest = async (toUserId: string) => {
   if (!auth.currentUser) throw new Error("No authenticated user");
-  // **MODIFICATION**: This now prevents sending a new request if ANY kind of request exists.
   const q = query(collection(db, "chatRequests"), where("participants", "==", [auth.currentUser.uid, toUserId].sort()));
   const existing = await getDocs(q);
   if (!existing.empty) {
@@ -184,7 +199,9 @@ export const rejectChatRequest = async (requestId: string) => {
   await updateDoc(doc(db, "chatRequests", requestId), { status: "rejected" });
 };
 
+// **MODIFIED revokeChatAccess**
 export const revokeChatAccess = async (user1Id: string, user2Id: string) => {
+  if (!auth.currentUser) throw new Error("No authenticated user");
   const q = query(
     collection(db, "chatRequests"),
     where("participants", "==", [user1Id, user2Id].sort()),
@@ -193,13 +210,16 @@ export const revokeChatAccess = async (user1Id: string, user2Id: string) => {
   const snapshot = await getDocs(q);
   if (snapshot.empty) throw new Error("No accepted chat found to revoke.");
   const batch = writeBatch(db);
-  snapshot.forEach(doc => batch.update(doc.ref, { status: "rejected" }));
+  snapshot.forEach(doc => batch.update(doc.ref, { 
+      status: "rejected",
+      revokedBy: auth.currentUser?.uid // <-- ADD WHO REVOKED IT
+  }));
   await batch.commit();
 };
 
-// ** NEW FUNCTION **
+// **MODIFIED grantChatAccess**
 export const grantChatAccess = async (user1Id: string, user2Id: string) => {
-  // Find the most recent rejected request to re-accept it.
+  if (!auth.currentUser) throw new Error("No authenticated user");
   const q = query(
     collection(db, "chatRequests"),
     where("participants", "==", [user1Id, user2Id].sort()),
@@ -211,9 +231,16 @@ export const grantChatAccess = async (user1Id: string, user2Id: string) => {
   if (snapshot.empty) throw new Error("No rejected chat found to grant access to.");
   
   const requestToGrant = snapshot.docs[0];
-  await updateDoc(requestToGrant.ref, { status: "accepted" });
+  // Ensure the current user is the one who revoked it before granting access
+  if (requestToGrant.data().revokedBy !== auth.currentUser.uid) {
+      throw new Error("Only the user who revoked access can grant it again.");
+  }
+  
+  await updateDoc(requestToGrant.ref, { 
+      status: "accepted",
+      revokedBy: deleteField() // <-- Clean up the field
+  });
 };
-
 
 export const canUsersChat = async (user1Id: string, user2Id: string): Promise<boolean> => {
   const q = query(
@@ -269,14 +296,15 @@ export const listenForMessages = (selectedUser: User | null, callback: (messages
   if (selectedUser) {
     q = query(
       collection(db, "messages"),
-      where("participants", "==", [auth.currentUser.uid, selectedUser.id].sort())
+      where("participants", "==", [auth.currentUser.uid, selectedUser.id].sort()),
+      orderBy("timestamp", "asc")
     );
   } else {
-    q = query(collection(db, "messages"), where("isPrivate", "==", false));
+    q = query(collection(db, "messages"), where("isPrivate", "==", false), orderBy("timestamp", "asc"));
   }
   return onSnapshot(q, (snapshot) => {
     const messages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
-    callback(messages.sort((a, b) => a.timestamp - b.timestamp));
+    callback(messages);
   }, (error) => {
     console.error(`Error listening for ${selectedUser ? 'private' : 'global'} messages:`, error);
   });

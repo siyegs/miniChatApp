@@ -1,4 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+// src/App.tsx
+
+import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
@@ -8,6 +10,7 @@ import { auth } from "./firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import React, { useEffect } from "react";
 import iskLogo from "/favicon-white.png";
+import PWAInstallButton from '../src/components/PWAInstallationButton.tsx'; // <-- IMPORT THE BUTTON
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const [user, loading] = useAuthState(auth);
@@ -40,7 +43,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <BrowserRouter>
+    // The BrowserRouter is now in main.tsx, so we don't need it here.
+    <div className="app-container">
       <Routes>
         <Route path="/" element={<Login />} />
         <Route
@@ -63,7 +67,8 @@ function App() {
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+      <PWAInstallButton /> {/* Render the floating button globally */}
+    </div>
   );
 }
 

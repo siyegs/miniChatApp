@@ -5,7 +5,7 @@ import { FiSettings, FiUser, FiXCircle } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import type { User, ChatRequest, Message } from "../components/chatUtils";
 import { auth } from "../firebase";
-import { signOutUser, canUsersChat } from "./chatUtils";
+//import { signOutUser } from "./chatUtils";
 import { FaDoorOpen } from "react-icons/fa";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUserPlus, faClock } from "@fortawesome/free-solid-svg-icons";
@@ -27,7 +27,7 @@ interface SidebarProps {
   onSendChatRequest: (userId: string) => void;
   unreadMessages: { [userId: string]: boolean };
   latestMessages: { [key: string]: Message };
-  isChatActive: boolean; // <-- NEW PROP
+  isChatActive: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -47,25 +47,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   handleSignOut,
   unreadMessages,
   latestMessages,
-  isChatActive, // <-- NEW PROP
+  isChatActive,
 }) => {
   const navigate = useNavigate();
 
-  const handleUserClick = async (user: User) => {
-    if (!user.displayName || !auth.currentUser) return;
-    if (user.isDeleted) return;
 
-    const canChat = await canUsersChat(auth.currentUser.uid, user.id);
-    if (canChat) {
-      setSelectedUser(user);
+  const handleUserClick = (user: User) => {
+    if (!user.displayName || user.isDeleted) return;
+    setSelectedUser(user);
+    if (isSidebarOpen) {
       setIsSidebarOpen(false);
-    } else {
-      const requestStatus = getRequestStatus(user.id);
-      if (requestStatus === 'pending') {
-        alert(`Your chat request to ${user.displayName} is still pending.`);
-      } else {
-        alert(`You must send a chat request and have it accepted to chat with ${user.displayName}.`);
-      }
     }
   };
 
@@ -74,10 +65,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     onSendChatRequest(userId);
   };
 
-  const getRequestStatus = (userId: string) => {
+  const getRequestStatus = (userId: string): ChatRequest['status'] | null => {
     if (!auth.currentUser) return null;
     
-    // **MODIFICATION**: Use the isChatActive prop for the currently selected user
     if (selectedUser?.id === userId) {
         return isChatActive ? 'accepted' : 'rejected';
     }
@@ -123,15 +113,17 @@ const Sidebar: React.FC<SidebarProps> = ({
           >
             {displayName}
             {showAccountModal && (
-              <div className="absolute left-0 mt-2 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-48 animate-fade-in">
+              <div className="absolute left-0 mt-2 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 px-1 w-48 animate-fade-in flex gap-1 flex-col">
                 <button
-                  className="w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-gray-100 flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm text-gray-800 bg-purple-400 hover:bg-purple-500 flex items-center gap-2"
                   onClick={() => navigate("/settings")}
-                >
+                  onMouseOver={(e)=> e.currentTarget.style.border = "none" }
+                  >
                   <FiSettings /> Settings
                 </button>
                 <button
-                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm bg-red-400 text-black hover:bg-red-500 flex items-center gap-2"
+                  onMouseOver={(e)=> e.currentTarget.style.border = "none" }
                   onClick={handleSignOut}
                 >
                   <FaDoorOpen /> Sign Out

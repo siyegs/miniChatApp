@@ -1,6 +1,5 @@
 // src/components/ChatHeader.tsx
-
-import React from "react";
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FiMenu,
   FiGlobe,
@@ -8,19 +7,20 @@ import {
   FiVolume2,
   FiUserX,
   FiUserCheck,
-} from "react-icons/fi";
-import { getLastActiveText } from "../components/chatUtils";
-import type { User } from "../components/chatUtils";
+} from 'react-icons/fi';
+import { getLastActiveText } from '../components/chatUtils';
+import type { User } from '../components/chatUtils';
 
 interface ChatHeaderProps {
   selectedUser: User | null | undefined;
   setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setPreviewImage: (url: string | null) => void;
   onRevokeClick: () => void;
-  onGrantClick: () => void; // New prop
-  isChatActive: boolean; // New prop
+  onGrantClick: () => void;
+  isChatActive: boolean;
   onMuteClick: () => void;
   isMuted: boolean;
+  isRevokedByCurrentUser: boolean;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -32,26 +32,37 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   isChatActive,
   onMuteClick,
   isMuted,
+  isRevokedByCurrentUser,
 }) => {
+  const [triggerGrantClick, setTriggerGrantClick] = useState<boolean>(false);
+
+  const handleGrantClick = useCallback(() => {
+    onGrantClick();
+    setTriggerGrantClick(true);
+  }, [onGrantClick]);
+
+  // Effect to handle auto-click after 1 second
+  useEffect(() => {
+    if (triggerGrantClick) {
+      const timer = setTimeout(() => {
+        onGrantClick();
+        setTriggerGrantClick(false);
+      }, 500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [triggerGrantClick, onGrantClick]);
+
   return (
     <div
-      className="flex items-center justify-between px-4 py-3 md:p-4 bg-gray-700/85 backdrop-blur-md text-white shadow border-b border-white/10"
-      style={{ boxSizing: "border-box" }}
+      className="flex items-center justify-between px-3 py-3 md:p-4 bg-gray-700/85 backdrop-blur-md text-white shadow border-b border-white/10"
+      style={{ boxSizing: 'border-box' }}
     >
-      <div
-        className="flex items-center gap-2"
-        style={{ boxSizing: "border-box" }}
-      >
+      <div className="flex items-center gap-1">
         <button
-          onClick={(e) => {
-            setIsSidebarOpen(true);
-            e.currentTarget.style.border = "none";
-          }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.border = "none";
-          }}
+          onClick={() => setIsSidebarOpen(true)}
+          onMouseOver={(e) => (e.currentTarget.style.border = 'none')}
           className="text-white hover:text-gray-300 md:hidden bg-inherit focus:outline-none p-2"
-          style={{ boxSizing: "border-box" }}
           aria-label="Toggle sidebar"
         >
           <FiMenu />
@@ -79,7 +90,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               )}
             </div>
             <div>
-              <h1 className="font-bold truncate block text-[clamp(1rem,2vw,1.9rem)] w-[166px] lg:w-full">
+              <h1 className="font-bold text-[clamp(15px,3vw,32px)]">
                 {selectedUser.displayName}
               </h1>
               <p className="text-xs text-gray-300">
@@ -92,7 +103,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             <div className="w-9 h-9 rounded-full bg-neutral-700 flex items-center justify-center">
               <FiGlobe size={20} />
             </div>
-            <h1 className="font-semibold  text-[clamp(1rem,2vw,1.9rem)]">
+            <h1 className="font-semibold text-[clamp(15px,3vw,23px)]">
               Global Chat
             </h1>
           </div>
@@ -100,14 +111,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
       </div>
 
       <div className="relative">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <button
             onClick={onMuteClick}
-            onMouseOver={(e) => {
-              e.currentTarget.style.border = "none";
-            }}
-            title={isMuted ? "Unmute Chat" : "Mute Chat"}
-            className="p-2 rounded-full hover:bg-white/10 transition-colors"
+            title={isMuted ? 'Unmute Chat' : 'Mute Chat'}
+            className="p-2 rounded-full hover:bg-white/10 transition-colors hover:border-purple-700"
           >
             {isMuted ? <FiBellOff size={15} /> : <FiVolume2 size={15} />}
           </button>
@@ -115,25 +123,22 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             (isChatActive ? (
               <button
                 onClick={onRevokeClick}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.border = "none";
-                }}
                 title="Revoke Chat Access"
-                className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                className="p-2 rounded-full hover:bg-white/10 transition-colors hover:border-purple-700"
               >
                 <FiUserX size={15} className="text-red-400" />
               </button>
             ) : (
-              <button
-                onClick={onGrantClick}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.border = "none";
-                }}
-                title="Grant Chat Access"
-                className="p-2 rounded-full hover:bg-white/10 transition-colors"
-              >
-                <FiUserCheck size={15} className="text-green-400" />
-              </button>
+              // Grant Chat Access button with auto-click
+              isRevokedByCurrentUser && (
+                <button
+                  onClick={handleGrantClick}
+                  title="Grant Chat Access"
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors hover:border-purple-700"
+                >
+                  <FiUserCheck size={15} className="text-green-400" />
+                </button>
+              )
             ))}
         </div>
       </div>
