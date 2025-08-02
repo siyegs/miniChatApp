@@ -1,6 +1,6 @@
 // src/App.tsx
 
-import { Routes, Route, Navigate } from "react-router-dom";
+import {Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Chat from "./pages/Chat";
 import Settings from "./pages/Settings";
@@ -10,7 +10,6 @@ import { auth } from "./firebase";
 import { useAuthState } from "react-firebase-hooks/auth";
 import React, { useEffect } from "react";
 import iskLogo from "/favicon-white.png";
-import PWAInstallButton from '../src/components/PWAInstallationButton.tsx'; // <-- IMPORT THE BUTTON
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const [user, loading] = useAuthState(auth);
@@ -43,32 +42,28 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    // The BrowserRouter is now in main.tsx, so we don't need it here.
-    <div className="app-container">
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route
-          path="/chat"
-          element={
-            <RequireAuth>
-              <Chat />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <RequireAuth>
-              <Settings />
-            </RequireAuth>
-          }
-        />
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/terms" element={<TermsOfService />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      <PWAInstallButton /> {/* Render the floating button globally */}
-    </div>
+    <Routes>
+      <Route path="/" element={<Login />} />
+      <Route
+        path="/chat"
+        element={
+          <RequireAuth>
+            <Chat />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <RequireAuth>
+            <Settings />
+          </RequireAuth>
+        }
+      />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/terms" element={<TermsOfService />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

@@ -1,11 +1,12 @@
+
 // src/components/Sidebar.tsx
 
 import React, { useState, useRef, useEffect } from "react";
-import { FiSettings, FiUser, FiXCircle } from "react-icons/fi";
+import { FiSettings, FiUser, FiXCircle, FiUsers, FiImage } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import type { User, ChatRequest, Message } from "../components/chatUtils";
 import { auth } from "../firebase";
-//import { signOutUser } from "./chatUtils";
+import { canUsersChat } from "./chatUtils";
 import { FaDoorOpen } from "react-icons/fa";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUserPlus, faClock } from "@fortawesome/free-solid-svg-icons";
@@ -28,6 +29,8 @@ interface SidebarProps {
   unreadMessages: { [userId: string]: boolean };
   latestMessages: { [key: string]: Message };
   isChatActive: boolean;
+  onShowChatRequests: () => void;
+  pendingRequestCount: number;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -48,13 +51,21 @@ const Sidebar: React.FC<SidebarProps> = ({
   unreadMessages,
   latestMessages,
   isChatActive,
+  onShowChatRequests,
+  pendingRequestCount,
 }) => {
   const navigate = useNavigate();
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const accountModalRef = useRef<HTMLDivElement>(null);
 
-
-  const handleUserClick = (user: User) => {
-    if (!user.displayName || user.isDeleted) return;
-    setSelectedUser(user);
+  const handleUserClick = async (user: User) => {
+    if (!user.displayName || !auth.currentUser || user.isDeleted) return;
+    const canChat = await canUsersChat(auth.currentUser.uid, user.id);
+    if (canChat || getRequestStatus(user.id) === 'rejected') {
+      setSelectedUser(user);
+    } else {
+      alert("You must send a request and have it accepted to chat.");
+    }
     if (isSidebarOpen) {
       setIsSidebarOpen(false);
     }
@@ -67,19 +78,14 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const getRequestStatus = (userId: string): ChatRequest['status'] | null => {
     if (!auth.currentUser) return null;
-    
     if (selectedUser?.id === userId) {
         return isChatActive ? 'accepted' : 'rejected';
     }
-
     const request = chatRequests.find(req => 
         req.participants.includes(auth.currentUser!.uid) && req.participants.includes(userId)
     );
     return request?.status || null;
   };
-
-  const [showAccountModal, setShowAccountModal] = useState(false);
-  const accountModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -112,19 +118,34 @@ const Sidebar: React.FC<SidebarProps> = ({
             ref={accountModalRef}
           >
             {displayName}
+            {pendingRequestCount > 0 && !showAccountModal && (
+                <div className="absolute top-0 -right-2 w-2 h-2 bg-purple-400 rounded-full" />
+            )}
             {showAccountModal && (
-              <div className="absolute left-0 mt-2 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 px-1 w-48 animate-fade-in flex gap-1 flex-col">
+              <div className="absolute left-[-15px] mt-2 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 px-1 w-48 animate-fade-in flex flex-col gap-1">
                 <button
-                  className="w-full text-left px-4 py-2 text-sm text-gray-800 bg-purple-400 hover:bg-purple-500 flex items-center gap-2"
+                  className="w-full text-left px-4 py-2 text-sm hover:text-gray-800 hover:bg-gray-100 flex items-center justify-between bg-purple-400 text-white rounded-lg"
+                  onClick={() => { onShowChatRequests(); setShowAccountModal(false); }}
+                  onMouseOver={(e) => e.currentTarget.style.border = "none"}
+                  >
+                  <div className="flex items-center gap-2">
+                    <FiUsers /> Chat Requests
+                  </div>
+                  <span className="bg-purple-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                    {pendingRequestCount}
+                  </span>
+                </button>
+                <button
+                  className="w-full text-left px-4 py-2 text-sm bg-slate-800/70 text-white hover:text-slate-800 hover:bg-gray-100 flex items-center gap-2"
                   onClick={() => navigate("/settings")}
-                  onMouseOver={(e)=> e.currentTarget.style.border = "none" }
+                  onMouseOver={(e) => e.currentTarget.style.border = "none"}
                   >
                   <FiSettings /> Settings
                 </button>
                 <button
-                  className="w-full text-left px-4 py-2 text-sm bg-red-400 text-black hover:bg-red-500 flex items-center gap-2"
-                  onMouseOver={(e)=> e.currentTarget.style.border = "none" }
+                  className="w-full text-left px-4 py-2 text-sm text-slate-800 bg-red-400 hover:bg-gray-100 flex items-center gap-2"
                   onClick={handleSignOut}
+                  onMouseOver={(e) => e.currentTarget.style.border = "none"}
                 >
                   <FaDoorOpen /> Sign Out
                 </button>
@@ -162,7 +183,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-semibold">Global Chat</span>
                 {latestMessages['global'] && (
                     <p className="text-xs text-white/60 truncate">
-                        {latestMessages['global'].text.startsWith('http') ? 'Image' : latestMessages['global'].text}
+                        {latestMessages['global'].text.startsWith('http') ? (<FiImage />) : latestMessages['global'].text}
                     </p>
                 )}
             </div>
@@ -204,7 +225,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         <span className="font-semibold truncate block">{user.displayName || "Invalid User"}</span>
                         {latestMessage && (
                             <p className="text-xs text-white/60 truncate">
-                                {latestMessage.text.startsWith('http') ? 'Image' : latestMessage.text}
+                                {latestMessage.text.startsWith('http') ? (<FiImage />) : latestMessage.text}
                             </p>
                         )}
                     </div>

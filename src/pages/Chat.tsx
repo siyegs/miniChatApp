@@ -16,7 +16,6 @@ import {
   grantChatAccess,
   listenForMessages,
   getMutedChats,
-  //setMutedChats,
   canUsersChat,
 } from "../components/chatUtils";
 import type {
@@ -32,6 +31,10 @@ import MessageInput from "../components/MessageInput";
 import Message from "../components/Message";
 import ChatRequestModal from "../components/ChatRequestModal";
 import chatPattern from "/chat-bg3-copy.jpg";
+
+export interface EnrichedChatRequest extends ChatRequest {
+    user: User | null;
+}
 
 function usePersistentSelectedChat(
   users: User[],
@@ -204,9 +207,6 @@ const Chat = () => {
           const currentRequest = requests.find(r => r.participants.includes(selectedUser.id));
           setIsChatActive(currentRequest?.status === 'accepted');
       }
-      if (requests.some(req => req.toUserId === auth.currentUser?.uid && req.status === 'pending')) {
-        setShowChatRequests(true);
-      }
     });
     return unsubscribe;
   }, [selectedUser]);
@@ -235,6 +235,7 @@ const Chat = () => {
 
     try {
       await revokeChatAccess(auth.currentUser.uid, userToRevoke.id);
+      //alert(`Chat access for ${userToRevoke.displayName} has been revoked.`);
     } catch (error: any) {
       alert(`Failed to revoke access: ${error.message}`);
       setChatRequests(prev => prev.map(req => 
@@ -256,7 +257,7 @@ const Chat = () => {
 
     try {
         await grantChatAccess(auth.currentUser.uid, selectedUser.id);
-//        alert(`Chat access has been granted to ${selectedUser.displayName}.`);
+       // alert(`Chat access has been granted to ${selectedUser.displayName}.`);
     } catch (error: any) {
         alert(`Failed to grant access: ${error.message}`);
         setChatRequests(prev => prev.map(req => 
@@ -309,9 +310,24 @@ const Chat = () => {
     setDeleteModal({ open: false, messageId: null });
   }, [deleteModal.messageId]);
 
-  // ** NEW: Derived state to pass to the header **
   const currentRequest = selectedUser ? chatRequests.find(r => r.participants.includes(selectedUser.id)) : null;
   const isRevokedByCurrentUser = currentRequest?.revokedBy === auth.currentUser?.uid;
+
+  const enrichedRequests: EnrichedChatRequest[] = useMemo(() => {
+    return chatRequests
+      .filter(req => req.toUserId === auth.currentUser?.uid)
+      .map(req => ({
+        ...req,
+        user: users.find(u => u.id === req.fromUserId) || null,
+      }));
+  }, [chatRequests, users, auth.currentUser]);
+
+  const pendingRequestCount = enrichedRequests.filter(r => r.status === 'pending').length;
+
+  // **THE FIX: Create a single notification status variable**
+  const hasNotifications = useMemo(() => {
+    return Object.keys(unreadMessages).length > 0 || pendingRequestCount > 0;
+  }, [unreadMessages, pendingRequestCount]);
 
   return (
     <>
@@ -333,7 +349,9 @@ const Chat = () => {
           onSendChatRequest={handleSendChatRequest}
           unreadMessages={unreadMessages}
           latestMessages={latestMessages}
-          isChatActive
+          isChatActive={isChatActive}
+          onShowChatRequests={() => setShowChatRequests(true)}
+          pendingRequestCount={pendingRequestCount}
         />
         <div className={`fixed inset-0 bg-black opacity-40 z-20 md:hidden duration-300 ${isSidebarOpen ? "block" : "hidden"}`} onClick={() => setIsSidebarOpen(false)} />
         <div className="flex-1 flex flex-col min-h-0">
@@ -342,13 +360,14 @@ const Chat = () => {
             setIsSidebarOpen={setIsSidebarOpen}
             setPreviewImage={setPreviewImage}
             onRevokeClick={() => setRevokeModal({ open: true, userToRevoke: selectedUser || null })}
-            onGrantClick={ handleGrantAccess}
+            onGrantClick={handleGrantAccess}
             isChatActive={isChatActive}
             onMuteClick={() => toggleMuteChat(selectedUser ? selectedUser.id : 'global')}
             isMuted={mutedChats.includes(selectedUser ? selectedUser.id : 'global')}
             isRevokedByCurrentUser={isRevokedByCurrentUser}
+            hasNotifications={hasNotifications} // <-- Pass the new prop
           />
-          <div className="flex-1 p-2 sm:p-4 overflow-y-auto"  style={{ backgroundImage: `url(${chatPattern})`, backgroundSize: '1100px', backgroundPosition: 'center' }}>
+          <div className="flex-1 p-2 sm:p-4 overflow-y-auto" style={{ backgroundImage: `url(${chatPattern})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
             <div className="relative flex flex-col h-full max-w-4xl mx-auto space-y-3 pb-4">
               {messages.map((msg, index) => {
                 const prevMsg = messages[index - 1];
@@ -365,7 +384,7 @@ const Chat = () => {
                 return (
                   <React.Fragment key={msg.id}>
                     {showDateSeparator && (
-                      <div className="w-fit mx-auto text-xs text-white/60 bg-gray-800/50 my-2 py-0.5 px-3 rounded-md">
+                      <div className="w-fit mx-auto text-xs text-white/60 my-2 px-2 py-1 rounded-lg bg-gray-800/60">
                         {getSeparatorText()}
                       </div>
                     )}
@@ -410,7 +429,7 @@ const Chat = () => {
         title="Revoke Chat Access?"
         description={`Are you sure you want to revoke chat access for ${revokeModal.userToRevoke?.displayName}?`}
         onCancel={() => setRevokeModal({ open: false, userToRevoke: null })}
-        onConfirm={() => { handleRevokeAccess(); setRevokeModal({ open: false, userToRevoke: null }); }}
+        onConfirm={handleRevokeAccess}
         confirmText="Revoke"
         cancelText="Cancel"
       />
@@ -425,8 +444,9 @@ const Chat = () => {
       />
       {showChatRequests && (
         <ChatRequestModal
-          requests={chatRequests.filter(r => r.toUserId === auth.currentUser?.uid)}
+          requests={enrichedRequests}
           onClose={() => setShowChatRequests(false)}
+          onPictureClick={setPreviewImage}
         />
       )}
     </>
