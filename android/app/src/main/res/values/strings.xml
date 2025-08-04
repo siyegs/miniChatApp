@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ISK Chat Room</string>
+    <string name="title_activity_main">ISK Chat Room</string>
+    <string name="package_name">com.isk.chatroom</string>
+    <string name="custom_url_scheme">com.isk.chatroom</string>
+</resources>
